@@ -3,6 +3,7 @@ import type {
   PluginSidebarThreadIndicator,
 } from "@get-bb/plugin-sdk";
 import {
+  ALL_LABELS,
   ALL_PROVIDERS,
   type StatusFilter,
   type ThreadSort,
@@ -72,6 +73,23 @@ export function filterByProvider(
 ): PluginSidebarThread[] {
   if (providerId === ALL_PROVIDERS) return [...threads];
   return threads.filter((thread) => thread.providerId === providerId);
+}
+
+/**
+ * Keep threads that carry `labelId`. Missing map entries mean "no labels".
+ * {@link ALL_LABELS} is a no-op so callers can always pass the preference.
+ */
+export function filterByLabel(
+  threads: readonly PluginSidebarThread[],
+  labelId: string,
+  labelIdsByThreadId: ReadonlyMap<string, readonly string[]> | null,
+): PluginSidebarThread[] {
+  if (labelId === ALL_LABELS || labelIdsByThreadId === null) {
+    return [...threads];
+  }
+  return threads.filter((thread) =>
+    (labelIdsByThreadId.get(thread.id) ?? []).includes(labelId),
+  );
 }
 
 function compareIds(left: { id: string }, right: { id: string }): number {

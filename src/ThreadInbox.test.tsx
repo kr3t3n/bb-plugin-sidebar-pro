@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
@@ -656,5 +656,102 @@ describe("pull request badge", () => {
     expect(
       (await screen.findByRole("link", { name: "#412" })).className,
     ).toContain("success");
+  });
+});
+
+describe("Labels Pro filter", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function stubLabelsPro(ready: boolean) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (!url.includes("/api/v1/plugins/labels-pro/rpc/")) {
+          return {
+            ok: false,
+            status: 404,
+            json: async () => ({}),
+          };
+        }
+        if (!ready) {
+          return { ok: false, status: 404, json: async () => ({}) };
+        }
+        if (url.endsWith("/listLabels")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              ok: true,
+              result: {
+                labels: [
+                  { id: "lbl_auto", name: "Automations", color: null },
+                ],
+              },
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            result: {
+              assignments: [
+                { threadId: "thr_tagged", labelIds: ["lbl_auto"] },
+              ],
+            },
+          }),
+        };
+      }),
+    );
+  }
+
+  it("hides the label filter when Labels Pro is unavailable", async () => {
+    stubLabelsPro(false);
+    render([thread({ id: "thr_1", title: "Alone" })]);
+    await screen.findByText("Alone");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("combobox", { name: /label filter/i }),
+      ).toBeNull();
+    });
+  });
+
+  it("shows the label filter when Labels Pro responds", async () => {
+    stubLabelsPro(true);
+    render([thread({ id: "thr_1", title: "Alone" })]);
+    expect(
+      await screen.findByRole("combobox", { name: /label filter/i }),
+    ).toBeDefined();
+  });
+
+  it("joins the assignment map with the sidebar list from preference", async () => {
+    stubLabelsPro(true);
+    window.localStorage.setItem(
+      "bb-plugin-sidebar-pro:list-preference:v1",
+      JSON.stringify({
+        statusFilter: "all",
+        providerId: "__all__",
+        labelId: "lbl_auto",
+        sort: "created_desc",
+        density: "spacious",
+      }),
+    );
+    render([
+      thread({ id: "thr_tagged", title: "Tagged", createdAt: 2 }),
+      thread({ id: "thr_plain", title: "Plain", createdAt: 1 }),
+    ]);
+    await screen.findByRole("combobox", { name: /label filter/i });
+    await waitFor(() => {
+      const titles = screen
+        .getAllByRole("listitem")
+        .map((row) => row.textContent);
+      expect(titles.some((t) => t?.includes("Tagged"))).toBe(true);
+      expect(titles.some((t) => t?.includes("Plain"))).toBe(false);
+    });
   });
 });

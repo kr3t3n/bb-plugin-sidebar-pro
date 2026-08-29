@@ -47,9 +47,17 @@ export type Density = (typeof DENSITIES)[number];
 
 export const ALL_PROVIDERS = "__all__";
 
+/** Sentinel for "no label filter" — same shape as {@link ALL_PROVIDERS}. */
+export const ALL_LABELS = "__all__";
+
 export type ListPreference = {
   statusFilter: StatusFilter;
   providerId: string;
+  /**
+   * Labels Pro label id, or {@link ALL_LABELS}. Ignored when Labels Pro is
+   * unavailable; still persisted so the choice returns with the plugin.
+   */
+  labelId: string;
   sort: ThreadSort;
   density: Density;
 };
@@ -57,6 +65,7 @@ export type ListPreference = {
 export const DEFAULT_PREFERENCE: ListPreference = {
   statusFilter: "all",
   providerId: ALL_PROVIDERS,
+  labelId: ALL_LABELS,
   sort: "created_desc",
   density: "spacious",
 };
@@ -93,6 +102,10 @@ export function loadListPreference(): ListPreference {
         typeof record.providerId === "string" && record.providerId.length > 0
           ? record.providerId
           : DEFAULT_PREFERENCE.providerId,
+      labelId:
+        typeof record.labelId === "string" && record.labelId.length > 0
+          ? record.labelId
+          : DEFAULT_PREFERENCE.labelId,
       sort:
         typeof record.sort === "string" && isThreadSort(record.sort)
           ? record.sort

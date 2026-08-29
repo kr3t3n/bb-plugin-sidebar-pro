@@ -5,6 +5,7 @@ Fork of [SawyerHood/bb-plugin-t3sidebar](https://github.com/SawyerHood/bb-plugin
 
 - **Status filter** — All / Needs you / Working / Unread / Idle / Draft
 - **Provider filter** — All providers, or one agent provider id
+- **Label filter** — All labels, or one [Labels Pro](../bb-plugin-labels-pro) label (hidden when Labels Pro is off)
 - **Sort** — Newest/oldest created, recent attention, recently updated, title A–Z / Z–A
 - **Density** — Toggle between spacious (three-line cards) and compact (one-line rows)
 - **Unread filter** — Click the bell to filter unread threads (click again for All); badge shows attention count
@@ -13,7 +14,16 @@ Fork of [SawyerHood/bb-plugin-t3sidebar](https://github.com/SawyerHood/bb-plugin
 Desktop OS notifications and the Dock / app-icon badge live in
 [Notifications Pro](../bb-plugin-notifications-pro), not here.
 
-Preferences persist in `localStorage` (`bb-plugin-sidebar-pro:list-preference:v1`).
+Preferences persist in `localStorage` (`bb-plugin-sidebar-pro:list-preference:v1`),
+including the selected label id.
+
+### Labels Pro
+
+When [Labels Pro](../bb-plugin-labels-pro) is installed and enabled, Sidebar Pro
+calls its RPC (`listLabels`, `listAssignments`) and shows a label filter in the
+list controls. If Labels Pro is missing or disabled, the filter is hidden and
+the list is unchanged. The temporary consumer contract lives in
+`src/labels-pro/contract.ts` until Labels Pro publishes `docs/rpc-contract.md`.
 
 Install from a local path:
 

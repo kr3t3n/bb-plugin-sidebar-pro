@@ -21,6 +21,7 @@ import { LinkOriginsProvider } from "./useLinkOrigins";
 import { countAttentionThreads, threadNeedsAttention } from "./attention";
 import { TRAILING_GLYPH_BOX_CLASS } from "./StatusSlot";
 import {
+  filterByLabel,
   filterByProject,
   filterByProvider,
   filterByStatus,
@@ -32,6 +33,7 @@ import {
   visibleInboxThreads,
 } from "./inbox";
 import {
+  ALL_LABELS,
   ALL_PROVIDERS,
   DEFAULT_PREFERENCE,
   loadListPreference,
@@ -45,6 +47,7 @@ import {
   type StatusFilter,
   type ThreadSort,
 } from "./list-preference";
+import { useLabelsPro } from "./labels-pro/useLabelsPro";
 
 const ALL_PROJECTS = "__all__";
 
@@ -62,6 +65,8 @@ export function ThreadInbox({
   const { status, threads, projects } = useSidebarThreads();
   const threadActions = useSidebarThreadActions();
   const lifecycle = useLifecycle(threads);
+  const labelsPro = useLabelsPro();
+  const labelsReady = labelsPro.status === "ready";
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
   const [preference, setPreference] = useState<ListPreference>(
     () => loadListPreference() ?? DEFAULT_PREFERENCE,
@@ -130,10 +135,19 @@ export function ThreadInbox({
     );
     const byStatus = filterByStatus(scoped, preference.statusFilter);
     const byProvider = filterByProvider(byStatus, preference.providerId);
+    const labelIdKnown =
+      preference.labelId === ALL_LABELS ||
+      (labelsReady &&
+        labelsPro.labels.some((label) => label.id === preference.labelId));
+    const byLabel = filterByLabel(
+      byProvider,
+      labelIdKnown ? preference.labelId : ALL_LABELS,
+      labelsReady ? labelsPro.labelIdsByThreadId : null,
+    );
     // Children live in their parent's header chip instead of the flat list;
     // an orphan whose parent is not on screen stays here.
     const matched = searchThreadsByTitle(
-      hideChildrenOfVisibleParents(byProvider),
+      hideChildrenOfVisibleParents(byLabel),
       searchQuery,
     );
     const active: typeof matched = [];
@@ -156,7 +170,7 @@ export function ThreadInbox({
       ),
       settled: sortThreads(onSettledShelf, preference.sort),
     };
-  }, [lifecycle, preference, scope, searchQuery, threads]);
+  }, [labelsPro, labelsReady, lifecycle, preference, scope, searchQuery, threads]);
 
   const scopeLabel =
     scope === ALL_PROJECTS
@@ -164,6 +178,16 @@ export function ThreadInbox({
       : (projectNameById.get(scope) ?? "All projects");
 
   const density: Density = preference.density;
+
+  // Prefer a known label name; fall back so a stale preference still labels the
+  // trigger while Labels Pro catches up.
+  const activeLabelName =
+    preference.labelId === ALL_LABELS
+      ? "All labels"
+      : (labelsReady
+          ? labelsPro.labels.find((label) => label.id === preference.labelId)
+              ?.name
+          : null) ?? "Label";
 
   return (
     <LinkOriginsProvider>
@@ -263,6 +287,43 @@ export function ThreadInbox({
                 ))}
               </SelectContent>
             </Select>
+            {labelsReady ? (
+              <Select
+                value={
+                  // Stale id (label deleted) still shows in the trigger via
+                  // activeLabelName; reset selection to All when unknown.
+                  labelsPro.labels.some(
+                    (label) => label.id === preference.labelId,
+                  ) || preference.labelId === ALL_LABELS
+                    ? preference.labelId
+                    : ALL_LABELS
+                }
+                onValueChange={(value) =>
+                  updatePreference({ labelId: value })
+                }
+              >
+                <SelectTrigger
+                  className="h-7 min-w-0 flex-1 border-0 px-1.5 py-1 text-xs text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0"
+                  aria-label={`Label filter: ${activeLabelName}`}
+                >
+                  <SelectValue placeholder="All labels" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_LABELS} className="text-xs">
+                    All labels
+                  </SelectItem>
+                  {labelsPro.labels.map((label) => (
+                    <SelectItem
+                      key={label.id}
+                      value={label.id}
+                      className="text-xs"
+                    >
+                      {label.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
             <Select
               value={preference.sort}
               onValueChange={(value) =>
@@ -303,7 +364,8 @@ export function ThreadInbox({
             >
               {searchQuery.trim() ||
               preference.statusFilter !== "all" ||
-              preference.providerId !== ALL_PROVIDERS
+              preference.providerId !== ALL_PROVIDERS ||
+              (labelsReady && preference.labelId !== ALL_LABELS)
                 ? "No threads found"
                 : "No threads yet"}
             </p>
