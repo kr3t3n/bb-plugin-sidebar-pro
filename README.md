@@ -20,10 +20,11 @@ including the selected label id.
 ### Labels Pro
 
 When [Labels Pro](../bb-plugin-labels-pro) is installed and enabled, Sidebar Pro
-calls its RPC (`listLabels`, `listAssignments`) and shows a label filter in the
-list controls. If Labels Pro is missing or disabled, the filter is hidden and
-the list is unchanged. The temporary consumer contract lives in
-`src/labels-pro/contract.ts` until Labels Pro publishes `docs/rpc-contract.md`.
+calls its RPC (`listLabels`, `listThreadsByLabel` — see Labels Pro
+`docs/rpc-contract.md`) and shows a label filter in the list controls plus
+compact chips on rows. Mark-all-read respects the active label filter. If Labels
+Pro is missing or disabled, the filter and chips are hidden and the list is
+unchanged. Consumer helpers live in `src/labels-pro/`.
 
 Install from a local path:
 

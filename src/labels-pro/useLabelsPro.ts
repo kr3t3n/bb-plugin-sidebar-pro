@@ -4,10 +4,8 @@ import {
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
 import {
-  assignmentMapFromResult,
   LabelsProUnavailableError,
-  listAssignments,
-  listLabels,
+  loadLabelsSnapshot,
 } from "./client";
 import {
   LABELS_PRO_REALTIME_CHANNEL,
@@ -28,7 +26,7 @@ const POLL_MS = 30_000;
 /**
  * Subscribe to Labels Pro definitions + assignment map for the sidebar join.
  * When the plugin is missing/disabled, status stays `unavailable` and callers
- * hide the filter.
+ * hide the filter / chips.
  */
 export function useLabelsPro(): LabelsProState {
   const [state, setState] = useState<LabelsProState>({ status: "loading" });
@@ -39,22 +37,11 @@ export function useLabelsPro(): LabelsProState {
     if (inFlight.current) return;
     inFlight.current = true;
     try {
-      const [labelsResult, assignmentsResult] = await Promise.all([
-        listLabels(),
-        listAssignments(),
-      ]);
-      const labels = Array.isArray(labelsResult.labels)
-        ? labelsResult.labels.filter(
-            (label): label is LabelsProLabel =>
-              typeof label?.id === "string" &&
-              label.id.length > 0 &&
-              typeof label?.name === "string",
-          )
-        : [];
+      const snapshot = await loadLabelsSnapshot();
       setState({
         status: "ready",
-        labels,
-        labelIdsByThreadId: assignmentMapFromResult(assignmentsResult),
+        labels: snapshot.labels,
+        labelIdsByThreadId: snapshot.labelIdsByThreadId,
       });
     } catch (error) {
       if (
@@ -80,7 +67,7 @@ export function useLabelsPro(): LabelsProState {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  // Labels Pro publishes on this channel (LABL-3). If the host scopes realtime
+  // Labels Pro publishes on this channel. If the host scopes realtime
   // per-plugin, the poll above still keeps the map fresh.
   useRealtime(LABELS_PRO_REALTIME_CHANNEL, () => {
     void refresh();

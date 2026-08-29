@@ -2,13 +2,15 @@
  * Cross-plugin RPC client for Labels Pro.
  *
  * Same-origin POST like Notifications Pro's content-script helper — `useRpc`
- * only talks to *this* plugin's backend.
+ * only talks to *this* plugin's backend. Wire methods match
+ * `bb-plugin-labels-pro/docs/rpc-contract.md`.
  */
 
 import {
   LABELS_PRO_PLUGIN_ID,
-  type ListAssignmentsResult,
+  type LabelsProLabel,
   type ListLabelsResult,
+  type ListThreadsByLabelResult,
 } from "./contract";
 
 export class LabelsProUnavailableError extends Error {
@@ -35,7 +37,8 @@ async function callLabelsProRpc<T>(method: string, input: unknown): Promise<T> {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(input ?? {}),
+        // Labels Pro uses `z.null()` for listLabels — do not coerce to {}.
+        body: JSON.stringify(input),
       },
     );
   } catch (error) {
@@ -75,26 +78,72 @@ async function callLabelsProRpc<T>(method: string, input: unknown): Promise<T> {
 }
 
 export function listLabels(): Promise<ListLabelsResult> {
-  return callLabelsProRpc<ListLabelsResult>("listLabels", {});
+  return callLabelsProRpc<ListLabelsResult>("listLabels", null);
 }
 
-export function listAssignments(): Promise<ListAssignmentsResult> {
-  return callLabelsProRpc<ListAssignmentsResult>("listAssignments", {});
+export function listThreadsByLabel(
+  labelId: string,
+): Promise<ListThreadsByLabelResult> {
+  return callLabelsProRpc<ListThreadsByLabelResult>("listThreadsByLabel", {
+    labelId,
+  });
 }
 
-/** Build threadId → labelIds for O(1) membership checks in the inbox filter. */
-export function assignmentMapFromResult(
-  result: ListAssignmentsResult,
-): Map<string, readonly string[]> {
-  const map = new Map<string, readonly string[]>();
-  for (const row of result.assignments) {
-    if (typeof row.threadId !== "string" || row.threadId.length === 0) continue;
-    const ids = Array.isArray(row.labelIds)
-      ? row.labelIds.filter(
-          (id): id is string => typeof id === "string" && id.length > 0,
-        )
-      : [];
-    map.set(row.threadId, ids);
+function isLabel(value: unknown): value is LabelsProLabel {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.id === "string" &&
+    row.id.length > 0 &&
+    typeof row.name === "string" &&
+    typeof row.slug === "string"
+  );
+}
+
+/**
+ * Load definitions plus an inverted thread→labelIds map by walking
+ * `listThreadsByLabel` for each label (no bulk assignments RPC on the wire).
+ */
+export async function loadLabelsSnapshot(): Promise<{
+  labels: LabelsProLabel[];
+  labelIdsByThreadId: Map<string, readonly string[]>;
+}> {
+  const { labels: raw } = await listLabels();
+  const labels = (Array.isArray(raw) ? raw : []).filter(isLabel);
+
+  const mutable = new Map<string, string[]>();
+  await Promise.all(
+    labels.map(async (label) => {
+      const { threadIds } = await listThreadsByLabel(label.id);
+      for (const threadId of threadIds) {
+        if (typeof threadId !== "string" || threadId.length === 0) continue;
+        const existing = mutable.get(threadId);
+        if (existing) existing.push(label.id);
+        else mutable.set(threadId, [label.id]);
+      }
+    }),
+  );
+
+  const labelIdsByThreadId = new Map<string, readonly string[]>();
+  for (const [threadId, ids] of mutable) {
+    labelIdsByThreadId.set(threadId, ids);
   }
-  return map;
+  return { labels, labelIdsByThreadId };
+}
+
+/** Resolve label DTOs for one thread from a ready snapshot. */
+export function labelsForThread(
+  threadId: string,
+  labels: readonly LabelsProLabel[],
+  labelIdsByThreadId: ReadonlyMap<string, readonly string[]>,
+): LabelsProLabel[] {
+  const ids = labelIdsByThreadId.get(threadId) ?? [];
+  if (ids.length === 0) return [];
+  const byId = new Map(labels.map((label) => [label.id, label]));
+  const resolved: LabelsProLabel[] = [];
+  for (const id of ids) {
+    const label = byId.get(id);
+    if (label) resolved.push(label);
+  }
+  return resolved;
 }

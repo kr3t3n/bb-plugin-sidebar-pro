@@ -9,11 +9,13 @@ import { Icon, type IconName } from "./components/Icon";
 import { cn } from "./lib/utils";
 import { RowContextMenu } from "./RowContextMenu";
 import { RowOverflowMenu } from "./RowOverflowMenu";
+import { LabelChips } from "./LabelChips";
 import { ProviderGlyph } from "./ProviderGlyph";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "./StatusSlot";
 import { TitleEditor } from "./TitleEditor";
 import { threadDisplayTitle } from "./inbox";
 import { resolveSnoozePresets } from "./lifecycle";
+import type { LabelsProLabel } from "./labels-pro/contract";
 
 /**
  * One thread as a three-line card: project and status, title, then branch and
@@ -30,6 +32,7 @@ export function ThreadCard({
   isActive,
   canPark,
   density,
+  labels = [],
   onNavigate,
   onSettle,
   onSnooze,
@@ -41,6 +44,8 @@ export function ThreadCard({
   /** False while the thread is working or blocked on the user. */
   canPark: boolean;
   density: "spacious" | "compact";
+  /** Labels Pro assignments for this thread; empty when Labels Pro is off. */
+  labels?: readonly LabelsProLabel[];
   onNavigate: () => void;
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
@@ -113,6 +118,7 @@ export function ThreadCard({
                   {title}
                 </span>
               )}
+              <LabelChips labels={labels} compact />
               <span className="pointer-events-auto relative flex items-center gap-0.5">
                 {canPark ? (
                   <span className="hidden items-center gap-0.5 group-hover/card:flex">
@@ -224,6 +230,7 @@ export function ThreadCard({
                 ) : (
                   <span className="flex-1" />
                 )}
+                <LabelChips labels={labels} />
                 {thread.activity.workflows > 0 ? (
                   <ActivityCount
                     label="workflows"

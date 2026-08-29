@@ -668,7 +668,7 @@ describe("Labels Pro filter", () => {
   function stubLabelsPro(ready: boolean) {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (!url.includes("/api/v1/plugins/labels-pro/rpc/")) {
           return {
@@ -688,24 +688,40 @@ describe("Labels Pro filter", () => {
               ok: true,
               result: {
                 labels: [
-                  { id: "lbl_auto", name: "Automations", color: null },
+                  {
+                    id: "lbl_auto",
+                    name: "Automations",
+                    slug: "automations",
+                    color: null,
+                    createdAt: 1,
+                    updatedAt: 1,
+                  },
                 ],
               },
             }),
           };
         }
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
+        if (url.endsWith("/listThreadsByLabel")) {
+          return {
             ok: true,
-            result: {
-              assignments: [
-                { threadId: "thr_tagged", labelIds: ["lbl_auto"] },
-              ],
-            },
-          }),
-        };
+            status: 200,
+            json: async () => ({
+              ok: true,
+              result: {
+                label: {
+                  id: "lbl_auto",
+                  name: "Automations",
+                  slug: "automations",
+                  color: null,
+                  createdAt: 1,
+                  updatedAt: 1,
+                },
+                threadIds: ["thr_tagged"],
+              },
+            }),
+          };
+        }
+        return { ok: false, status: 404, json: async () => ({}) };
       }),
     );
   }
@@ -752,6 +768,54 @@ describe("Labels Pro filter", () => {
         .map((row) => row.textContent);
       expect(titles.some((t) => t?.includes("Tagged"))).toBe(true);
       expect(titles.some((t) => t?.includes("Plain"))).toBe(false);
+    });
+  });
+
+  it("shows label chips on tagged rows", async () => {
+    stubLabelsPro(true);
+    render([thread({ id: "thr_tagged", title: "Tagged row" })]);
+    expect(
+      await screen.findByLabelText("Labels: Automations"),
+    ).toBeDefined();
+  });
+
+  it("mark-all-read only targets attention threads in the active label filter", async () => {
+    stubLabelsPro(true);
+    window.localStorage.setItem(
+      "bb-plugin-sidebar-pro:list-preference:v1",
+      JSON.stringify({
+        statusFilter: "all",
+        providerId: "__all__",
+        labelId: "lbl_auto",
+        sort: "created_desc",
+        density: "spacious",
+      }),
+    );
+    const rendered = render([
+      thread({
+        id: "thr_tagged",
+        title: "Tagged unread",
+        isUnread: true,
+        createdAt: 2,
+      }),
+      thread({
+        id: "thr_plain",
+        title: "Plain unread",
+        isUnread: true,
+        createdAt: 1,
+      }),
+    ]);
+    await screen.findByRole("combobox", { name: /label filter/i });
+    await waitFor(() => {
+      expect(screen.getByText("Tagged unread")).toBeDefined();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /mark all as read/i }));
+    await waitFor(() => {
+      const reads = rendered.sidebarActionCalls.filter(
+        (call) => call.method === "setRead",
+      );
+      expect(reads.some((call) => call.threadId === "thr_tagged")).toBe(true);
+      expect(reads.some((call) => call.threadId === "thr_plain")).toBe(false);
     });
   });
 });

@@ -48,6 +48,7 @@ import {
   type ThreadSort,
 } from "./list-preference";
 import { useLabelsPro } from "./labels-pro/useLabelsPro";
+import { labelsForThread } from "./labels-pro/client";
 
 const ALL_PROJECTS = "__all__";
 
@@ -100,10 +101,27 @@ export function ThreadInbox({
     });
   };
 
-  /** Mark every attention thread read (clears blue dots + bell badge). */
+  const labelIdsByThreadId = labelsReady
+    ? labelsPro.labelIdsByThreadId
+    : null;
+
+  /** Effective label id for filtering (stale ids fall back to All). */
+  const effectiveLabelId =
+    preference.labelId === ALL_LABELS ||
+    (labelsReady &&
+      labelsPro.labels.some((label) => label.id === preference.labelId))
+      ? preference.labelId
+      : ALL_LABELS;
+
+  /** Mark attention threads read — respects the active label filter. */
   const markAllRead = () => {
-    const ids = threads
-      .filter((thread) => !thread.isArchived && threadNeedsAttention(thread))
+    const candidates = filterByLabel(
+      threads.filter((thread) => !thread.isArchived),
+      effectiveLabelId,
+      labelIdsByThreadId,
+    );
+    const ids = candidates
+      .filter((thread) => threadNeedsAttention(thread))
       .map((thread) => thread.id);
     void Promise.all(
       ids.map((id) => threadActions.setRead(id, true).catch(() => undefined)),
@@ -135,14 +153,10 @@ export function ThreadInbox({
     );
     const byStatus = filterByStatus(scoped, preference.statusFilter);
     const byProvider = filterByProvider(byStatus, preference.providerId);
-    const labelIdKnown =
-      preference.labelId === ALL_LABELS ||
-      (labelsReady &&
-        labelsPro.labels.some((label) => label.id === preference.labelId));
     const byLabel = filterByLabel(
       byProvider,
-      labelIdKnown ? preference.labelId : ALL_LABELS,
-      labelsReady ? labelsPro.labelIdsByThreadId : null,
+      effectiveLabelId,
+      labelIdsByThreadId,
     );
     // Children live in their parent's header chip instead of the flat list;
     // an orphan whose parent is not on screen stays here.
@@ -170,7 +184,17 @@ export function ThreadInbox({
       ),
       settled: sortThreads(onSettledShelf, preference.sort),
     };
-  }, [labelsPro, labelsReady, lifecycle, preference, scope, searchQuery, threads]);
+  }, [
+    effectiveLabelId,
+    labelIdsByThreadId,
+    labelsPro,
+    labelsReady,
+    lifecycle,
+    preference,
+    scope,
+    searchQuery,
+    threads,
+  ]);
 
   const scopeLabel =
     scope === ALL_PROJECTS
@@ -178,6 +202,15 @@ export function ThreadInbox({
       : (projectNameById.get(scope) ?? "All projects");
 
   const density: Density = preference.density;
+
+  const threadLabels = (threadId: string) =>
+    labelsReady
+      ? labelsForThread(
+          threadId,
+          labelsPro.labels,
+          labelsPro.labelIdsByThreadId,
+        )
+      : [];
 
   // Prefer a known label name; fall back so a stale preference still labels the
   // trigger while Labels Pro catches up.
@@ -383,6 +416,7 @@ export function ThreadInbox({
                       isActive={thread.id === activeThreadId}
                       canPark={lifecycle.canPark(thread)}
                       density={density}
+                      labels={threadLabels(thread.id)}
                       onNavigate={onNavigate}
                       onSettle={() => lifecycle.settle(thread.id)}
                       onSnooze={(until) =>
@@ -405,6 +439,7 @@ export function ThreadInbox({
                       isActive={thread.id === activeThreadId}
                       canPark={lifecycle.canPark(thread)}
                       density={density}
+                      labels={threadLabels(thread.id)}
                       onNavigate={onNavigate}
                       onSettle={() => lifecycle.settle(thread.id)}
                       onSnooze={(until) =>
