@@ -741,7 +741,7 @@ describe("Labels Pro filter", () => {
     stubLabelsPro(true);
     render([thread({ id: "thr_1", title: "Alone" })]);
     expect(
-      await screen.findByRole("combobox", { name: /label filter/i }),
+      await screen.findByRole("button", { name: /label filter/i }),
     ).toBeDefined();
   });
 
@@ -752,7 +752,8 @@ describe("Labels Pro filter", () => {
       JSON.stringify({
         statusFilter: "all",
         providerId: "__all__",
-        labelId: "lbl_auto",
+        labelFilterMode: "only",
+        labelIds: ["lbl_auto"],
         sort: "created_desc",
         density: "spacious",
       }),
@@ -761,13 +762,42 @@ describe("Labels Pro filter", () => {
       thread({ id: "thr_tagged", title: "Tagged", createdAt: 2 }),
       thread({ id: "thr_plain", title: "Plain", createdAt: 1 }),
     ]);
-    await screen.findByRole("combobox", { name: /label filter/i });
+    await screen.findByRole("button", { name: /label filter/i });
     await waitFor(() => {
       const titles = screen
         .getAllByRole("listitem")
         .map((row) => row.textContent);
       expect(titles.some((t) => t?.includes("Tagged"))).toBe(true);
       expect(titles.some((t) => t?.includes("Plain"))).toBe(false);
+    });
+  });
+
+  it("hides threads that carry any selected label", async () => {
+    stubLabelsPro(true);
+    window.localStorage.setItem(
+      "bb-plugin-sidebar-pro:list-preference:v1",
+      JSON.stringify({
+        statusFilter: "all",
+        providerId: "__all__",
+        labelFilterMode: "hide",
+        labelIds: ["lbl_auto"],
+        sort: "created_desc",
+        density: "spacious",
+      }),
+    );
+    render([
+      thread({ id: "thr_tagged", title: "Tagged", createdAt: 2 }),
+      thread({ id: "thr_plain", title: "Plain", createdAt: 1 }),
+    ]);
+    expect(
+      await screen.findByRole("button", { name: /hide · automations/i }),
+    ).toBeDefined();
+    await waitFor(() => {
+      const titles = screen
+        .getAllByRole("listitem")
+        .map((row) => row.textContent);
+      expect(titles.some((t) => t?.includes("Plain"))).toBe(true);
+      expect(titles.some((t) => t?.includes("Tagged"))).toBe(false);
     });
   });
 
@@ -786,7 +816,8 @@ describe("Labels Pro filter", () => {
       JSON.stringify({
         statusFilter: "all",
         providerId: "__all__",
-        labelId: "lbl_auto",
+        labelFilterMode: "only",
+        labelIds: ["lbl_auto"],
         sort: "created_desc",
         density: "spacious",
       }),
@@ -805,7 +836,7 @@ describe("Labels Pro filter", () => {
         createdAt: 1,
       }),
     ]);
-    await screen.findByRole("combobox", { name: /label filter/i });
+    await screen.findByRole("button", { name: /label filter/i });
     await waitFor(() => {
       expect(screen.getByText("Tagged unread")).toBeDefined();
     });

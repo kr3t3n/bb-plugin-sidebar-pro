@@ -4,6 +4,7 @@ import {
   ALL_LABELS,
   ALL_PROVIDERS,
   DEFAULT_PREFERENCE,
+  labelFilterSummary,
   loadListPreference,
   saveListPreference,
   type ListPreference,
@@ -17,17 +18,19 @@ afterEach(() => {
   }
 });
 
-describe("list preference labelId", () => {
-  it("defaults labelId to All labels", () => {
-    expect(DEFAULT_PREFERENCE.labelId).toBe(ALL_LABELS);
-    expect(loadListPreference().labelId).toBe(ALL_LABELS);
+describe("list preference label filter", () => {
+  it("defaults to All labels with an empty selection", () => {
+    expect(DEFAULT_PREFERENCE.labelFilterMode).toBe("all");
+    expect(DEFAULT_PREFERENCE.labelIds).toEqual([]);
+    expect(loadListPreference().labelFilterMode).toBe("all");
   });
 
-  it("persists and restores labelId alongside other fields", () => {
+  it("persists multi-select hide preferences", () => {
     const preference: ListPreference = {
       statusFilter: "unread",
       providerId: "codex",
-      labelId: "lbl_automations",
+      labelFilterMode: "hide",
+      labelIds: ["lbl_auto", "lbl_bug"],
       sort: "title_asc",
       density: "compact",
     };
@@ -35,16 +38,56 @@ describe("list preference labelId", () => {
     expect(loadListPreference()).toEqual(preference);
   });
 
-  it("fills missing labelId from older stored prefs", () => {
+  it("migrates single labelId + labelMode from older prefs", () => {
     window.localStorage.setItem(
       "bb-plugin-sidebar-pro:list-preference:v1",
       JSON.stringify({
         statusFilter: "all",
         providerId: ALL_PROVIDERS,
+        labelId: "lbl_automations",
+        labelMode: "hide",
         sort: "created_desc",
         density: "spacious",
       }),
     );
-    expect(loadListPreference().labelId).toBe(ALL_LABELS);
+    const loaded = loadListPreference();
+    expect(loaded.labelFilterMode).toBe("hide");
+    expect(loaded.labelIds).toEqual(["lbl_automations"]);
+  });
+
+  it("treats legacy All labels sentinel as empty selection", () => {
+    window.localStorage.setItem(
+      "bb-plugin-sidebar-pro:list-preference:v1",
+      JSON.stringify({
+        statusFilter: "all",
+        providerId: ALL_PROVIDERS,
+        labelId: ALL_LABELS,
+        labelMode: "only",
+        sort: "created_desc",
+        density: "spacious",
+      }),
+    );
+    const loaded = loadListPreference();
+    expect(loaded.labelFilterMode).toBe("all");
+    expect(loaded.labelIds).toEqual([]);
+  });
+});
+
+describe("labelFilterSummary", () => {
+  const names = new Map([
+    ["a", "automation"],
+    ["b", "bug"],
+    ["c", "customer"],
+  ]);
+
+  it("summarises all / one / two / many", () => {
+    expect(labelFilterSummary("all", [], names)).toBe("All labels");
+    expect(labelFilterSummary("hide", ["a"], names)).toBe("Hide · automation");
+    expect(labelFilterSummary("hide", ["a", "b"], names)).toBe(
+      "Hide · automation, bug",
+    );
+    expect(labelFilterSummary("only", ["a", "b", "c"], names)).toBe(
+      "Only · 3 labels",
+    );
   });
 });

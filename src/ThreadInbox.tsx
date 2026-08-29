@@ -18,7 +18,11 @@ import { ThreadCard } from "./ThreadCard";
 import { SlimRow } from "./SlimRow";
 import { useLifecycle } from "./useLifecycle";
 import { LinkOriginsProvider } from "./useLinkOrigins";
-import { countAttentionThreads, threadNeedsAttention } from "./attention";
+import {
+  countAttentionThreads,
+  partitionAutomationAttention,
+  threadNeedsAttention,
+} from "./attention";
 import { TRAILING_GLYPH_BOX_CLASS } from "./StatusSlot";
 import {
   filterByLabel,
@@ -33,7 +37,6 @@ import {
   visibleInboxThreads,
 } from "./inbox";
 import {
-  ALL_LABELS,
   ALL_PROVIDERS,
   DEFAULT_PREFERENCE,
   loadListPreference,
@@ -43,12 +46,14 @@ import {
   STATUS_FILTER_LABELS,
   STATUS_FILTERS,
   type Density,
+  type LabelFilterMode,
   type ListPreference,
   type StatusFilter,
   type ThreadSort,
 } from "./list-preference";
 import { useLabelsPro } from "./labels-pro/useLabelsPro";
 import { labelsForThread } from "./labels-pro/client";
+import { LabelFilterMenu } from "./LabelFilterMenu";
 
 const ALL_PROJECTS = "__all__";
 
@@ -105,24 +110,59 @@ export function ThreadInbox({
     ? labelsPro.labelIdsByThreadId
     : null;
 
-  /** Effective label id for filtering (stale ids fall back to All). */
-  const effectiveLabelId =
-    preference.labelId === ALL_LABELS ||
-    (labelsReady &&
-      labelsPro.labels.some((label) => label.id === preference.labelId))
-      ? preference.labelId
-      : ALL_LABELS;
+  /** Drop stale ids (deleted labels) from the persisted selection. */
+  const knownLabelIdSet = useMemo(() => {
+    if (!labelsReady) return null;
+    return new Set(labelsPro.labels.map((label) => label.id));
+  }, [labelsPro, labelsReady]);
+  const effectiveLabelIds =
+    knownLabelIdSet === null
+      ? preference.labelIds
+      : preference.labelIds.filter((id) => knownLabelIdSet.has(id));
+  const effectiveLabelMode: LabelFilterMode =
+    effectiveLabelIds.length === 0 ? "all" : preference.labelFilterMode;
 
   /** Mark attention threads read — respects the active label filter. */
   const markAllRead = () => {
     const candidates = filterByLabel(
       threads.filter((thread) => !thread.isArchived),
-      effectiveLabelId,
+      effectiveLabelIds,
       labelIdsByThreadId,
+      effectiveLabelMode,
     );
     const ids = candidates
       .filter((thread) => threadNeedsAttention(thread))
       .map((thread) => thread.id);
+    void Promise.all(
+      ids.map((id) => threadActions.setRead(id, true).catch(() => undefined)),
+    );
+  };
+
+  /** Labels Pro `automation` label (slug or name), if present. */
+  const automationLabelId = labelsReady
+    ? (labelsPro.labels.find(
+        (label) =>
+          label.slug === "automation" ||
+          label.name.toLowerCase() === "automation",
+      )?.id ?? null)
+    : null;
+
+  const automationAttention = useMemo(
+    () =>
+      partitionAutomationAttention(
+        threads,
+        automationLabelId,
+        labelIdsByThreadId,
+      ),
+    [automationLabelId, labelIdsByThreadId, threads],
+  );
+
+  /**
+   * Mark unread automation threads read when the run looks fine. Skips
+   * unread-error and any thread waiting on the user (question / approval).
+   */
+  const clearQuietAutomations = () => {
+    const ids = automationAttention.clearable.map((thread) => thread.id);
     void Promise.all(
       ids.map((id) => threadActions.setRead(id, true).catch(() => undefined)),
     );
@@ -155,8 +195,9 @@ export function ThreadInbox({
     const byProvider = filterByProvider(byStatus, preference.providerId);
     const byLabel = filterByLabel(
       byProvider,
-      effectiveLabelId,
+      effectiveLabelIds,
       labelIdsByThreadId,
+      effectiveLabelMode,
     );
     // Children live in their parent's header chip instead of the flat list;
     // an orphan whose parent is not on screen stays here.
@@ -185,7 +226,8 @@ export function ThreadInbox({
       settled: sortThreads(onSettledShelf, preference.sort),
     };
   }, [
-    effectiveLabelId,
+    effectiveLabelIds,
+    effectiveLabelMode,
     labelIdsByThreadId,
     labelsPro,
     labelsReady,
@@ -212,15 +254,12 @@ export function ThreadInbox({
         )
       : [];
 
-  // Prefer a known label name; fall back so a stale preference still labels the
-  // trigger while Labels Pro catches up.
-  const activeLabelName =
-    preference.labelId === ALL_LABELS
-      ? "All labels"
-      : (labelsReady
-          ? labelsPro.labels.find((label) => label.id === preference.labelId)
-              ?.name
-          : null) ?? "Label";
+  const setLabelFilter = (mode: LabelFilterMode, labelIds: string[]) => {
+    updatePreference({
+      labelFilterMode: mode,
+      labelIds,
+    });
+  };
 
   return (
     <LinkOriginsProvider>
@@ -258,6 +297,13 @@ export function ThreadInbox({
               attentionCount={attentionCount}
               onMarkAllRead={markAllRead}
             />
+            {labelsReady && automationLabelId !== null ? (
+              <ClearQuietAutomationsButton
+                clearableCount={automationAttention.clearable.length}
+                blockedCount={automationAttention.blocked.length}
+                onClear={clearQuietAutomations}
+              />
+            ) : null}
             <DensityToggle
               density={density}
               onToggle={() =>
@@ -321,41 +367,12 @@ export function ThreadInbox({
               </SelectContent>
             </Select>
             {labelsReady ? (
-              <Select
-                value={
-                  // Stale id (label deleted) still shows in the trigger via
-                  // activeLabelName; reset selection to All when unknown.
-                  labelsPro.labels.some(
-                    (label) => label.id === preference.labelId,
-                  ) || preference.labelId === ALL_LABELS
-                    ? preference.labelId
-                    : ALL_LABELS
-                }
-                onValueChange={(value) =>
-                  updatePreference({ labelId: value })
-                }
-              >
-                <SelectTrigger
-                  className="h-7 min-w-0 flex-1 border-0 px-1.5 py-1 text-xs text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0"
-                  aria-label={`Label filter: ${activeLabelName}`}
-                >
-                  <SelectValue placeholder="All labels" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_LABELS} className="text-xs">
-                    All labels
-                  </SelectItem>
-                  {labelsPro.labels.map((label) => (
-                    <SelectItem
-                      key={label.id}
-                      value={label.id}
-                      className="text-xs"
-                    >
-                      {label.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <LabelFilterMenu
+                labels={labelsPro.labels}
+                mode={effectiveLabelMode}
+                selectedIds={effectiveLabelIds}
+                onChange={setLabelFilter}
+              />
             ) : null}
             <Select
               value={preference.sort}
@@ -398,7 +415,7 @@ export function ThreadInbox({
               {searchQuery.trim() ||
               preference.statusFilter !== "all" ||
               preference.providerId !== ALL_PROVIDERS ||
-              (labelsReady && preference.labelId !== ALL_LABELS)
+              (labelsReady && effectiveLabelMode !== "all")
                 ? "No threads found"
                 : "No threads yet"}
             </p>
@@ -538,6 +555,57 @@ function MarkAllReadButton({
       }
     >
       <Icon name="Check" className="size-3.5" aria-hidden />
+    </button>
+  );
+}
+
+function ClearQuietAutomationsButton({
+  clearableCount,
+  blockedCount,
+  onClear,
+}: {
+  clearableCount: number;
+  blockedCount: number;
+  onClear: () => void;
+}) {
+  const disabled = clearableCount === 0;
+  const title =
+    clearableCount === 0 && blockedCount === 0
+      ? "No unread automation threads"
+      : clearableCount === 0
+        ? `${blockedCount} automation thread${blockedCount === 1 ? "" : "s"} still need you (error or question)`
+        : blockedCount > 0
+          ? `Mark ${clearableCount} quiet automation${clearableCount === 1 ? "" : "s"} read — leave ${blockedCount} with errors/questions`
+          : `Mark ${clearableCount} quiet automation thread${clearableCount === 1 ? "" : "s"} read`;
+  return (
+    <button
+      type="button"
+      onClick={onClear}
+      disabled={disabled}
+      aria-label={title}
+      title={title}
+      className={
+        disabled
+          ? "relative inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/40"
+          : "relative inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+      }
+    >
+      <Icon name="Workflow" className="size-3.5" aria-hidden />
+      {clearableCount > 0 ? (
+        <span
+          aria-hidden
+          className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-emerald-600 px-0.5 text-[9px] font-semibold leading-none text-white"
+        >
+          {clearableCount > 99 ? "99+" : clearableCount}
+        </span>
+      ) : blockedCount > 0 ? (
+        <span
+          aria-hidden
+          className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-amber-500 px-0.5 text-[9px] font-semibold leading-none text-white"
+        >
+          {blockedCount > 99 ? "99+" : blockedCount}
+        </span>
+      ) : null}
     </button>
   );
 }

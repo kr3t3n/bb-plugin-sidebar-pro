@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
-import { countAttentionThreads, threadNeedsAttention } from "./attention";
+import {
+  countAttentionThreads,
+  partitionAutomationAttention,
+  threadBlocksAutomationClear,
+  threadNeedsAttention,
+} from "./attention";
 
 function thread(
   overrides: Partial<PluginSidebarThread> = {},
@@ -74,5 +79,64 @@ describe("countAttentionThreads", () => {
         thread({ id: "b", isUnread: true, isArchived: true }),
       ]),
     ).toBe(1);
+  });
+});
+
+describe("threadBlocksAutomationClear", () => {
+  it("blocks errors and questions", () => {
+    expect(
+      threadBlocksAutomationClear(thread({ indicator: "unread-error" })),
+    ).toBe(true);
+    expect(
+      threadBlocksAutomationClear(thread({ indicator: "waiting-for-input" })),
+    ).toBe(true);
+    expect(
+      threadBlocksAutomationClear(thread({ hasPendingInteraction: true })),
+    ).toBe(true);
+  });
+
+  it("allows quiet unread success", () => {
+    expect(
+      threadBlocksAutomationClear(
+        thread({ isUnread: true, indicator: "unread-success" }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("partitionAutomationAttention", () => {
+  const auto = "lbl_auto";
+  const map = new Map<string, readonly string[]>([
+    ["ok", [auto]],
+    ["ask", [auto]],
+    ["err", [auto]],
+    ["other", ["lbl_bug"]],
+    ["quiet", [auto]],
+  ]);
+
+  it("marks only quiet automation attention as clearable", () => {
+    const { clearable, blocked } = partitionAutomationAttention(
+      [
+        thread({ id: "ok", isUnread: true, indicator: "unread-success" }),
+        thread({ id: "ask", indicator: "waiting-for-input" }),
+        thread({ id: "err", indicator: "unread-error" }),
+        thread({ id: "other", isUnread: true }),
+        thread({ id: "quiet" }),
+      ],
+      auto,
+      map,
+    );
+    expect(clearable.map((t) => t.id)).toEqual(["ok"]);
+    expect(blocked.map((t) => t.id).sort()).toEqual(["ask", "err"]);
+  });
+
+  it("returns empty when Labels Pro data is missing", () => {
+    expect(
+      partitionAutomationAttention(
+        [thread({ id: "ok", isUnread: true })],
+        null,
+        map,
+      ),
+    ).toEqual({ clearable: [], blocked: [] });
   });
 });

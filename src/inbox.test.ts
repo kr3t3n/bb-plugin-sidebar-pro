@@ -15,7 +15,7 @@ import {
   threadDisplayTitle,
   visibleInboxThreads,
 } from "./inbox";
-import { ALL_LABELS, ALL_PROVIDERS } from "./list-preference";
+import { ALL_PROVIDERS } from "./list-preference";
 
 function thread(
   overrides: Partial<PluginSidebarThread> = {},
@@ -200,13 +200,21 @@ describe("filtering", () => {
     const map = new Map<string, readonly string[]>([
       ["a", ["lbl_auto"]],
       ["b", ["lbl_other", "lbl_auto"]],
+      ["c", ["lbl_bug"]],
     ]);
-    expect(filterByLabel(threads, "lbl_auto", map).map((t) => t.id)).toEqual([
-      "a",
-      "b",
-    ]);
-    expect(filterByLabel(threads, ALL_LABELS, map)).toHaveLength(3);
-    expect(filterByLabel(threads, "lbl_auto", null)).toHaveLength(3);
+    expect(
+      filterByLabel(threads, ["lbl_auto"], map, "only").map((t) => t.id),
+    ).toEqual(["a", "b"]);
+    expect(
+      filterByLabel(threads, ["lbl_auto", "lbl_bug"], map, "hide").map(
+        (t) => t.id,
+      ),
+    ).toEqual([]);
+    expect(
+      filterByLabel(threads, ["lbl_auto"], map, "hide").map((t) => t.id),
+    ).toEqual(["c"]);
+    expect(filterByLabel(threads, [], map, "only")).toHaveLength(3);
+    expect(filterByLabel(threads, ["lbl_auto"], null, "only")).toHaveLength(3);
   });
 });
 

@@ -3,8 +3,8 @@ import type {
   PluginSidebarThreadIndicator,
 } from "@get-bb/plugin-sdk";
 import {
-  ALL_LABELS,
   ALL_PROVIDERS,
+  type LabelFilterMode,
   type StatusFilter,
   type ThreadSort,
 } from "./list-preference";
@@ -76,20 +76,31 @@ export function filterByProvider(
 }
 
 /**
- * Keep threads that carry `labelId`. Missing map entries mean "no labels".
- * {@link ALL_LABELS} is a no-op so callers can always pass the preference.
+ * Apply the Labels Pro multi-label filter.
+ * - `all` or empty `labelIds`: no-op
+ * - `only`: keep threads that carry any selected label
+ * - `hide`: drop threads that carry any selected label
+ * Missing map entries mean "no labels" on that thread.
  */
 export function filterByLabel(
   threads: readonly PluginSidebarThread[],
-  labelId: string,
+  labelIds: readonly string[],
   labelIdsByThreadId: ReadonlyMap<string, readonly string[]> | null,
+  mode: LabelFilterMode = "only",
 ): PluginSidebarThread[] {
-  if (labelId === ALL_LABELS || labelIdsByThreadId === null) {
+  if (
+    mode === "all" ||
+    labelIds.length === 0 ||
+    labelIdsByThreadId === null
+  ) {
     return [...threads];
   }
-  return threads.filter((thread) =>
-    (labelIdsByThreadId.get(thread.id) ?? []).includes(labelId),
-  );
+  const selected = new Set(labelIds);
+  return threads.filter((thread) => {
+    const ids = labelIdsByThreadId.get(thread.id) ?? [];
+    const hit = ids.some((id) => selected.has(id));
+    return mode === "hide" ? !hit : hit;
+  });
 }
 
 function compareIds(left: { id: string }, right: { id: string }): number {
