@@ -67,11 +67,13 @@ export function StatusGlyph({
         />
       );
     case "waiting-for-input":
+      // Warning orange so a raised hand (secret / question / approval) reads
+      // louder than the muted age label and working spinner beside it.
       return (
         <Icon
           name="CircleQuestion"
           aria-label={aria}
-          className={cn(shared, "text-muted-foreground/75")}
+          className={cn(shared, "text-warning-text")}
         />
       );
     case "runtime":
