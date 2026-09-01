@@ -594,6 +594,18 @@ describe("attention states", () => {
     });
   }
 
+  it("colors waiting-for-input with warning orange", async () => {
+    render([
+      thread({
+        id: "thr_ask",
+        indicator: "waiting-for-input",
+        indicatorLabel: "Thread needs user input",
+      }),
+    ]);
+    const glyph = await screen.findByLabelText("Thread needs user input");
+    expect(glyph.getAttribute("class") ?? "").toContain("text-warning-text");
+  });
+
   // Running work is the one state the user does NOT have to act on, so it gets
   // the neutral spinner and no notification dot.
   it("shows the spinner, not a dot, while work runs", async () => {
