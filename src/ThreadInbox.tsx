@@ -54,6 +54,7 @@ import {
 import { useLabelsPro } from "./labels-pro/useLabelsPro";
 import { labelsForThread } from "./labels-pro/client";
 import { LabelFilterMenu } from "./LabelFilterMenu";
+import { ThreadSearch } from "./ThreadSearch";
 
 const ALL_PROJECTS = "__all__";
 
@@ -61,7 +62,8 @@ const ALL_PROJECTS = "__all__";
  * The sidebar's scrolling list: inbox shelves plus Sidebar Pro controls
  * (status / provider filters, sort, compact↔spacious density, unread bell).
  *
- * The host owns the New-thread button and the search field above it.
+ * The host keeps New thread. Search lives in Sidebar Pro and docks to the
+ * right of that button when the content-script slot is present.
  */
 export function ThreadInbox({
   activeThreadId,
@@ -92,6 +94,15 @@ export function ThreadInbox({
   const now = nowMinute * 60_000;
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
+  const [listQuery, setListQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const effectiveQuery = listQuery.trim() !== "" ? listQuery : searchQuery;
+
+  const handleNavigate = () => {
+    setListQuery("");
+    setSearchOpen(false);
+    onNavigate();
+  };
 
   // In-list count only. OS toasts + Dock badge live in Notifications Pro.
   const attentionCount = useMemo(
@@ -203,7 +214,7 @@ export function ThreadInbox({
     // an orphan whose parent is not on screen stays here.
     const matched = searchThreadsByTitle(
       hideChildrenOfVisibleParents(byLabel),
-      searchQuery,
+      effectiveQuery,
     );
     const active: typeof matched = [];
     const onSnoozeShelf: typeof matched = [];
@@ -234,7 +245,7 @@ export function ThreadInbox({
     lifecycle,
     preference,
     scope,
-    searchQuery,
+    effectiveQuery,
     threads,
   ]);
 
@@ -311,6 +322,12 @@ export function ThreadInbox({
                   density: density === "spacious" ? "compact" : "spacious",
                 })
               }
+            />
+            <ThreadSearch
+              query={listQuery}
+              onQueryChange={setListQuery}
+              open={searchOpen}
+              onOpenChange={setSearchOpen}
             />
           </div>
           <div className="flex items-center gap-1">
@@ -412,7 +429,7 @@ export function ThreadInbox({
               role="status"
               className="px-2 py-6 text-center text-xs text-muted-foreground"
             >
-              {searchQuery.trim() ||
+              {effectiveQuery.trim() ||
               preference.statusFilter !== "all" ||
               preference.providerId !== ALL_PROVIDERS ||
               (labelsReady && effectiveLabelMode !== "all")
@@ -434,7 +451,7 @@ export function ThreadInbox({
                       canPark={lifecycle.canPark(thread)}
                       density={density}
                       labels={threadLabels(thread.id)}
-                      onNavigate={onNavigate}
+                      onNavigate={handleNavigate}
                       onSettle={() => lifecycle.settle(thread.id)}
                       onSnooze={(until) =>
                         lifecycle.snooze(thread.id, until)
@@ -457,7 +474,7 @@ export function ThreadInbox({
                       canPark={lifecycle.canPark(thread)}
                       density={density}
                       labels={threadLabels(thread.id)}
-                      onNavigate={onNavigate}
+                      onNavigate={handleNavigate}
                       onSettle={() => lifecycle.settle(thread.id)}
                       onSnooze={(until) =>
                         lifecycle.snooze(thread.id, until)
@@ -475,7 +492,7 @@ export function ThreadInbox({
                 shelf="snoozed"
                 activeThreadId={activeThreadId}
                 lifecycle={lifecycle}
-                onNavigate={onNavigate}
+                onNavigate={handleNavigate}
               />
               <ParkedShelf
                 label="Settled"
@@ -485,7 +502,7 @@ export function ThreadInbox({
                 shelf="settled"
                 activeThreadId={activeThreadId}
                 lifecycle={lifecycle}
-                onNavigate={onNavigate}
+                onNavigate={handleNavigate}
               />
             </>
           )}

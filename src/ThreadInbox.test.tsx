@@ -182,8 +182,6 @@ describe("ThreadInbox", () => {
     expect(within(pinned).getByText("Stuck")).toBeDefined();
   });
 
-  // The host owns the search field; the plugin only filters by what it is
-  // handed, so there is deliberately no second search box to type into.
   it("filters by the host's search query", () => {
     renderSlot(
       inbox,
@@ -204,9 +202,45 @@ describe("ThreadInbox", () => {
     expect(screen.getByText("Sidebar work")).toBeDefined();
   });
 
-  it("ships no search field of its own", () => {
-    render([thread({ id: "a" })]);
-    expect(screen.queryByLabelText("Search threads")).toBeNull();
+  it("opens its own search field and filters the list", () => {
+    render([
+      thread({ id: "a", title: "Sidebar work" }),
+      thread({ id: "b", title: "Something else" }),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Search threads" }));
+    fireEvent.change(screen.getByLabelText("Search threads"), {
+      target: { value: "sidebar" },
+    });
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByText("Sidebar work")).toBeDefined();
+  });
+
+  it("clears search when a thread is opened", () => {
+    const onNavigate = vi.fn();
+    renderSlot(
+      inbox,
+      { ...listProps, onNavigate },
+      {
+        sidebarThreads: {
+          status: "ready",
+          threads: [
+            thread({ id: "a", title: "Sidebar work" }),
+            thread({ id: "b", title: "Something else" }),
+          ],
+          projects: [{ id: "proj_1", name: "bb", isPersonal: false }],
+        },
+        rpc: { listLifecycle: () => ({ rows: [] }) },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Search threads" }));
+    fireEvent.change(screen.getByLabelText("Search threads"), {
+      target: { value: "sidebar" },
+    });
+    fireEvent.click(screen.getByRole("link", { name: "Sidebar work" }));
+    expect(onNavigate).toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Search threads" }),
+    ).toBeDefined();
   });
 
   it("ships no new-thread button of its own", () => {

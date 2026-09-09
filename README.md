@@ -55,9 +55,10 @@ bb plugin reload sidebar-pro
 Turn it on in **Settings → Appearance → Sidebar**. Stock T3 Sidebar can stay
 installed; pick **Sidebar Pro** when you want the extra controls.
 
-The plugin still replaces only the scrolling list. bb keeps New thread, search,
-plugin nav, and footer. Project scope, snooze/settle shelves, and parent/child
-header chips behave like upstream T3.
+The plugin still replaces only the scrolling list. bb keeps New thread, plugin
+nav, and footer. Thread search is a Sidebar Pro control docked to the right of
+New thread. Project scope, snooze/settle shelves, and parent/child header chips
+behave like upstream T3.
 
 ## Manual test (with Labels + Notifications Pro)
 

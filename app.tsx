@@ -8,8 +8,16 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ThreadInbox } from "./src/ThreadInbox";
 import { ParentChip } from "./src/ParentChip";
 import { SubagentsChip } from "./src/SubagentsChip";
+import { mountSearchSlot } from "./src/search-slot";
 
 export default definePluginApp((app) => {
+  app.contentScripts.register({
+    id: "new-thread-search-slot",
+    mount({ signal }) {
+      mountSearchSlot(signal);
+    },
+  });
+
   app.slots.experimental_threadList({
     id: "inbox",
     title: "Sidebar Pro",
