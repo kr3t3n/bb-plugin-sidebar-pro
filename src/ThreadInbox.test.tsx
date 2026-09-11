@@ -531,6 +531,11 @@ describe("card metadata", () => {
     expect(await screen.findByLabelText("Claude Code")).toBeDefined();
   });
 
+  it("shows the Cursor logo for acp-cursor threads", async () => {
+    render([thread({ id: "thr_cursor", providerId: "acp-cursor" })]);
+    expect(await screen.findByLabelText("Cursor")).toBeDefined();
+  });
+
   it("falls back to a neutral glyph for an unknown provider", async () => {
     render([thread({ id: "thr_p", providerId: "some-new-agent" })]);
     expect(await screen.findByLabelText("some-new-agent")).toBeDefined();
