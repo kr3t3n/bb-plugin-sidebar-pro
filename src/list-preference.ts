@@ -70,6 +70,8 @@ export type ListPreference = {
   labelIds: string[];
   sort: ThreadSort;
   density: Density;
+  /** When true, the list shows archived threads instead of the live inbox. */
+  showArchived: boolean;
 };
 
 export const DEFAULT_PREFERENCE: ListPreference = {
@@ -79,6 +81,7 @@ export const DEFAULT_PREFERENCE: ListPreference = {
   labelIds: [],
   sort: "created_desc",
   density: "spacious",
+  showArchived: false,
 };
 
 const STORAGE_KEY = "bb-plugin-sidebar-pro:list-preference:v1";
@@ -167,6 +170,7 @@ export function loadListPreference(): ListPreference {
         typeof record.density === "string" && isDensity(record.density)
           ? record.density
           : DEFAULT_PREFERENCE.density,
+      showArchived: record.showArchived === true,
     };
   } catch {
     return { ...DEFAULT_PREFERENCE };

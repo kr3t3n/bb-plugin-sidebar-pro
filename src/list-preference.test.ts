@@ -33,6 +33,7 @@ describe("list preference label filter", () => {
       labelIds: ["lbl_auto", "lbl_bug"],
       sort: "title_asc",
       density: "compact",
+      showArchived: false,
     };
     saveListPreference(preference);
     expect(loadListPreference()).toEqual(preference);

@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -7,6 +6,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "./components/Icon";
 import { cn } from "./lib/utils";
+import { useEffect, useMemo, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -18,6 +18,8 @@ import { ThreadCard } from "./ThreadCard";
 import { SlimRow } from "./SlimRow";
 import { useLifecycle } from "./useLifecycle";
 import { LinkOriginsProvider } from "./useLinkOrigins";
+import { useArchivedThreads } from "./useArchivedThreads";
+import { ARCHIVED_LIST_LIMIT } from "./archived-contract";
 import {
   countAttentionThreads,
   partitionAutomationAttention,
@@ -60,7 +62,8 @@ const ALL_PROJECTS = "__all__";
 
 /**
  * The sidebar's scrolling list: inbox shelves plus Sidebar Pro controls
- * (status / provider filters, sort, compact↔spacious density, unread bell).
+ * (status / provider filters, sort, compact↔spacious density, unread bell,
+ * archived-threads toggle).
  *
  * The host keeps New thread. Search lives in Sidebar Pro and docks to the
  * right of that button when the content-script slot is present.
@@ -79,6 +82,11 @@ export function ThreadInbox({
   const [preference, setPreference] = useState<ListPreference>(
     () => loadListPreference() ?? DEFAULT_PREFERENCE,
   );
+  const showArchived = preference.showArchived;
+  const archived = useArchivedThreads({
+    enabled: showArchived,
+    projectId: scope === ALL_PROJECTS ? null : scope,
+  });
   // One clock for every card in a render, quantized to the minute so the
   // labels do not disagree and do not churn on unrelated re-renders.
   const [nowMinute, setNowMinute] = useState(() =>
@@ -114,7 +122,13 @@ export function ThreadInbox({
   const filterUnreadThreads = () => {
     updatePreference({
       statusFilter: preference.statusFilter === "unread" ? "all" : "unread",
+      showArchived: false,
     });
+  };
+
+  /** Archive action: swap the list to archived threads (toggle back to inbox). */
+  const toggleArchivedThreads = () => {
+    updatePreference({ showArchived: !preference.showArchived });
   };
 
   const labelIdsByThreadId = labelsReady
@@ -198,6 +212,32 @@ export function ThreadInbox({
   );
 
   const { pinned, inbox, snoozed, settled } = useMemo(() => {
+    if (showArchived) {
+      const scoped = filterByProject(
+        archived.threads,
+        scope === ALL_PROJECTS ? null : scope,
+      );
+      const byStatus = filterByStatus(scoped, preference.statusFilter);
+      const byProvider = filterByProvider(byStatus, preference.providerId);
+      const byLabel = filterByLabel(
+        byProvider,
+        effectiveLabelIds,
+        labelIdsByThreadId,
+        effectiveLabelMode,
+      );
+      const matched = searchThreadsByTitle(
+        hideChildrenOfVisibleParents(byLabel),
+        listQuery.trim(),
+      );
+      const split = partitionPinned(matched);
+      return {
+        pinned: sortThreads(split.pinned, preference.sort),
+        inbox: sortThreads(split.inbox, preference.sort),
+        snoozed: [] as PluginSidebarThread[],
+        settled: [] as PluginSidebarThread[],
+      };
+    }
+
     const scoped = filterByProject(
       visibleInboxThreads(threads),
       scope === ALL_PROJECTS ? null : scope,
@@ -237,14 +277,17 @@ export function ThreadInbox({
       settled: sortThreads(onSettledShelf, preference.sort),
     };
   }, [
+    archived.threads,
     effectiveLabelIds,
     effectiveLabelMode,
     labelIdsByThreadId,
     labelsPro,
     labelsReady,
     lifecycle,
+    listQuery,
     preference,
     scope,
+    showArchived,
     effectiveQuery,
     threads,
   ]);
@@ -300,9 +343,15 @@ export function ThreadInbox({
               </SelectContent>
             </Select>
             <UnreadFilterToggle
-              unreadFilterActive={preference.statusFilter === "unread"}
+              unreadFilterActive={
+                !showArchived && preference.statusFilter === "unread"
+              }
               attentionCount={attentionCount}
               onFilterUnread={filterUnreadThreads}
+            />
+            <ArchivedThreadsToggle
+              active={showArchived}
+              onToggle={toggleArchivedThreads}
             />
             <MarkAllReadButton
               attentionCount={attentionCount}
@@ -416,7 +465,22 @@ export function ThreadInbox({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-          {status === "loading" ? null : status === "error" ? (
+          {showArchived && archived.status === "loading" ? (
+            <p
+              role="status"
+              className="px-2 py-6 text-center text-xs text-muted-foreground"
+            >
+              Loading archived threads…
+            </p>
+          ) : showArchived && archived.status === "error" ? (
+            <p
+              role="status"
+              className="px-2 py-6 text-center text-xs text-muted-foreground"
+            >
+              Could not load archived threads.
+            </p>
+          ) : status === "loading" && !showArchived ? null : status ===
+              "error" && !showArchived ? (
             <p
               role="status"
               className="px-2 py-6 text-center text-xs text-muted-foreground"
@@ -429,18 +493,25 @@ export function ThreadInbox({
               role="status"
               className="px-2 py-6 text-center text-xs text-muted-foreground"
             >
-              {effectiveQuery.trim() ||
-              preference.statusFilter !== "all" ||
-              preference.providerId !== ALL_PROVIDERS ||
-              (labelsReady && effectiveLabelMode !== "all")
-                ? "No threads found"
-                : "No threads yet"}
+              {showArchived
+                ? listQuery.trim() ||
+                  preference.statusFilter !== "all" ||
+                  preference.providerId !== ALL_PROVIDERS ||
+                  (labelsReady && effectiveLabelMode !== "all")
+                  ? "No archived threads found"
+                  : "No archived threads"
+                : effectiveQuery.trim() ||
+                    preference.statusFilter !== "all" ||
+                    preference.providerId !== ALL_PROVIDERS ||
+                    (labelsReady && effectiveLabelMode !== "all")
+                  ? "No threads found"
+                  : "No threads yet"}
             </p>
           ) : (
             <>
-              {pinned.length > 0 ? (
-                <Shelf label="Pinned">
-                  {pinned.map((thread) => (
+              {showArchived ? (
+                <Shelf label="Archived">
+                  {pinned.concat(inbox).map((thread) => (
                     <ThreadCard
                       key={thread.id}
                       thread={thread}
@@ -448,62 +519,95 @@ export function ThreadInbox({
                         projectNameById.get(thread.projectId) ?? null
                       }
                       isActive={thread.id === activeThreadId}
-                      canPark={lifecycle.canPark(thread)}
+                      canPark={false}
                       density={density}
                       labels={threadLabels(thread.id)}
                       onNavigate={handleNavigate}
-                      onSettle={() => lifecycle.settle(thread.id)}
-                      onSnooze={(until) =>
-                        lifecycle.snooze(thread.id, until)
-                      }
+                      onSettle={() => undefined}
+                      onSnooze={() => undefined}
                       now={now}
                     />
                   ))}
                 </Shelf>
+              ) : (
+                <>
+                  {pinned.length > 0 ? (
+                    <Shelf label="Pinned">
+                      {pinned.map((thread) => (
+                        <ThreadCard
+                          key={thread.id}
+                          thread={thread}
+                          projectName={
+                            projectNameById.get(thread.projectId) ?? null
+                          }
+                          isActive={thread.id === activeThreadId}
+                          canPark={lifecycle.canPark(thread)}
+                          density={density}
+                          labels={threadLabels(thread.id)}
+                          onNavigate={handleNavigate}
+                          onSettle={() => lifecycle.settle(thread.id)}
+                          onSnooze={(until) =>
+                            lifecycle.snooze(thread.id, until)
+                          }
+                          now={now}
+                        />
+                      ))}
+                    </Shelf>
+                  ) : null}
+                  {inbox.length > 0 ? (
+                    <Shelf label={pinned.length > 0 ? "Inbox" : null}>
+                      {inbox.map((thread) => (
+                        <ThreadCard
+                          key={thread.id}
+                          thread={thread}
+                          projectName={
+                            projectNameById.get(thread.projectId) ?? null
+                          }
+                          isActive={thread.id === activeThreadId}
+                          canPark={lifecycle.canPark(thread)}
+                          density={density}
+                          labels={threadLabels(thread.id)}
+                          onNavigate={handleNavigate}
+                          onSettle={() => lifecycle.settle(thread.id)}
+                          onSnooze={(until) =>
+                            lifecycle.snooze(thread.id, until)
+                          }
+                          now={now}
+                        />
+                      ))}
+                    </Shelf>
+                  ) : null}
+                  <ParkedShelf
+                    label="Snoozed"
+                    threads={snoozed}
+                    expanded={showSnoozed}
+                    onToggle={() => setShowSnoozed((open) => !open)}
+                    shelf="snoozed"
+                    activeThreadId={activeThreadId}
+                    lifecycle={lifecycle}
+                    onNavigate={handleNavigate}
+                  />
+                  <ParkedShelf
+                    label="Settled"
+                    threads={settled}
+                    expanded={showSettled}
+                    onToggle={() => setShowSettled((open) => !open)}
+                    shelf="settled"
+                    activeThreadId={activeThreadId}
+                    lifecycle={lifecycle}
+                    onNavigate={handleNavigate}
+                  />
+                </>
+              )}
+              {showArchived && archived.truncated ? (
+                <p
+                  role="status"
+                  className="px-2 py-2 text-center text-[10px] text-muted-foreground"
+                >
+                  Showing the newest {ARCHIVED_LIST_LIMIT.toLocaleString()}{" "}
+                  archived threads.
+                </p>
               ) : null}
-              {inbox.length > 0 ? (
-                <Shelf label={pinned.length > 0 ? "Inbox" : null}>
-                  {inbox.map((thread) => (
-                    <ThreadCard
-                      key={thread.id}
-                      thread={thread}
-                      projectName={
-                        projectNameById.get(thread.projectId) ?? null
-                      }
-                      isActive={thread.id === activeThreadId}
-                      canPark={lifecycle.canPark(thread)}
-                      density={density}
-                      labels={threadLabels(thread.id)}
-                      onNavigate={handleNavigate}
-                      onSettle={() => lifecycle.settle(thread.id)}
-                      onSnooze={(until) =>
-                        lifecycle.snooze(thread.id, until)
-                      }
-                      now={now}
-                    />
-                  ))}
-                </Shelf>
-              ) : null}
-              <ParkedShelf
-                label="Snoozed"
-                threads={snoozed}
-                expanded={showSnoozed}
-                onToggle={() => setShowSnoozed((open) => !open)}
-                shelf="snoozed"
-                activeThreadId={activeThreadId}
-                lifecycle={lifecycle}
-                onNavigate={handleNavigate}
-              />
-              <ParkedShelf
-                label="Settled"
-                threads={settled}
-                expanded={showSettled}
-                onToggle={() => setShowSettled((open) => !open)}
-                shelf="settled"
-                activeThreadId={activeThreadId}
-                lifecycle={lifecycle}
-                onNavigate={handleNavigate}
-              />
             </>
           )}
         </div>
@@ -546,6 +650,35 @@ function UnreadFilterToggle({
           {attentionCount > 99 ? "99+" : attentionCount}
         </span>
       ) : null}
+    </button>
+  );
+}
+
+/** Toggles the sidebar between the live inbox and archived threads. */
+function ArchivedThreadsToggle({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle: () => void;
+}) {
+  const label = active
+    ? "Showing archived — click for inbox"
+    : "Show archived threads";
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      className={
+        active
+          ? "inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-foreground"
+          : "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+      }
+    >
+      <Icon name="Archive" className="size-3.5" aria-hidden />
     </button>
   );
 }

@@ -11,6 +11,7 @@ Fork of [SawyerHood/bb-plugin-t3sidebar](https://github.com/SawyerHood/bb-plugin
 - **Sort** — Newest/oldest created, recent attention, recently updated, title A–Z / Z–A
 - **Density** — Toggle between spacious (three-line cards) and compact (one-line rows)
 - **Unread filter** — Click the bell to filter unread threads (click again for All); badge shows attention count
+- **Archived threads** — Archive icon next to the bell swaps the sidebar list to archived threads (click again for the live inbox). Status, provider, and Labels Pro filters (e.g. Hide · automation) apply the same way. Right-click → Unarchive restores one.
 - **Mark all read** — Check button next to the bell marks every attention thread read (clears blue dots and the bell badge); respects the active label filter
 
 Desktop OS notifications and the Dock / app-icon badge live in

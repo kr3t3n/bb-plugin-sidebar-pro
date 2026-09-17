@@ -135,9 +135,202 @@ describe("ThreadInbox", () => {
   // A plugin that drops these attributes silently breaks nine host shortcuts.
   it("marks every row as a host shortcut target", () => {
     render([thread({ id: "thr_x" })]);
-    const row = screen.getByRole("link");
+    const row = screen.getByRole("link", { name: "A thread" });
     expect(row.hasAttribute("data-sidebar-thread-shortcut-target")).toBe(true);
     expect(row.getAttribute("data-sidebar-thread-id")).toBe("thr_x");
+  });
+
+  it("toggles archived threads in the sidebar list", async () => {
+    renderSlot(inbox, listProps, {
+      sidebarThreads: {
+        status: "ready",
+        threads: [thread({ id: "live", title: "Live thread" })],
+        projects: [{ id: "proj_1", name: "bb", isPersonal: false }],
+      },
+      rpc: {
+        listLifecycle: () => ({ rows: [] }),
+        linkOrigins: () => ({
+          localOrigin: "http://127.0.0.1:38886",
+          cloudOrigin: null,
+        }),
+        listArchived: () => ({
+          threads: [
+            {
+              id: "arch_1",
+              projectId: "proj_1",
+              title: "Old archived",
+              titleFallback: null,
+              parentThreadId: null,
+              sectionId: null,
+              originKind: null,
+              originPluginId: null,
+              providerId: "acp-cursor",
+              hasPendingInteraction: false,
+              activity: {
+                workflows: 0,
+                backgroundAgents: 0,
+                backgroundCommands: 0,
+                planMode: 0,
+                goals: 0,
+              },
+              isPinned: false,
+              environment: null,
+              createdAt: 1,
+              updatedAt: 1,
+              lastReadAt: 1,
+              latestAttentionAt: 1,
+            },
+          ],
+          truncated: false,
+        }),
+      },
+    });
+    expect(screen.getByText("Live thread")).toBeDefined();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show archived threads" }),
+    );
+    expect(await screen.findByText("Old archived")).toBeDefined();
+    expect(screen.queryByText("Live thread")).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "Showing archived — click for inbox",
+      }),
+    ).toBeDefined();
+  });
+
+  it("applies Hide label filter to archived threads", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/listLabels")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              ok: true,
+              result: {
+                labels: [
+                  {
+                    id: "lbl_auto",
+                    name: "Automations",
+                    slug: "automations",
+                    color: null,
+                    createdAt: 1,
+                    updatedAt: 1,
+                  },
+                ],
+              },
+            }),
+          };
+        }
+        if (url.endsWith("/listThreadsByLabel")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              ok: true,
+              result: {
+                label: {
+                  id: "lbl_auto",
+                  name: "Automations",
+                  slug: "automations",
+                  color: null,
+                  createdAt: 1,
+                  updatedAt: 1,
+                },
+                threadIds: ["arch_auto"],
+              },
+            }),
+          };
+        }
+        return { ok: false, status: 404, json: async () => ({}) };
+      }),
+    );
+    window.localStorage.setItem(
+      "bb-plugin-sidebar-pro:list-preference:v1",
+      JSON.stringify({
+        statusFilter: "all",
+        providerId: "__all__",
+        labelFilterMode: "hide",
+        labelIds: ["lbl_auto"],
+        sort: "created_desc",
+        density: "spacious",
+        showArchived: true,
+      }),
+    );
+    renderSlot(inbox, listProps, {
+      sidebarThreads: {
+        status: "ready",
+        threads: [],
+        projects: [{ id: "proj_1", name: "bb", isPersonal: false }],
+      },
+      rpc: {
+        listLifecycle: () => ({ rows: [] }),
+        linkOrigins: () => ({
+          localOrigin: "http://127.0.0.1:38886",
+          cloudOrigin: null,
+        }),
+        listArchived: () => ({
+          threads: [
+            {
+              id: "arch_auto",
+              projectId: "proj_1",
+              title: "Automation archived",
+              titleFallback: null,
+              parentThreadId: null,
+              sectionId: null,
+              originKind: null,
+              originPluginId: "automations",
+              providerId: "acp-cursor",
+              hasPendingInteraction: false,
+              activity: {
+                workflows: 0,
+                backgroundAgents: 0,
+                backgroundCommands: 0,
+                planMode: 0,
+                goals: 0,
+              },
+              isPinned: false,
+              environment: null,
+              createdAt: 1,
+              updatedAt: 1,
+              lastReadAt: 1,
+              latestAttentionAt: 1,
+            },
+            {
+              id: "arch_plain",
+              projectId: "proj_1",
+              title: "Plain archived",
+              titleFallback: null,
+              parentThreadId: null,
+              sectionId: null,
+              originKind: null,
+              originPluginId: null,
+              providerId: "acp-cursor",
+              hasPendingInteraction: false,
+              activity: {
+                workflows: 0,
+                backgroundAgents: 0,
+                backgroundCommands: 0,
+                planMode: 0,
+                goals: 0,
+              },
+              isPinned: false,
+              environment: null,
+              createdAt: 2,
+              updatedAt: 2,
+              lastReadAt: 2,
+              latestAttentionAt: 2,
+            },
+          ],
+          truncated: false,
+        }),
+      },
+    });
+    expect(await screen.findByText("Plain archived")).toBeDefined();
+    expect(screen.queryByText("Automation archived")).toBeNull();
+    vi.unstubAllGlobals();
   });
 
   it("opens a thread on click and closes the mobile drawer", () => {
@@ -154,7 +347,7 @@ describe("ThreadInbox", () => {
         rpc: { listLifecycle: () => ({ rows: [] }) },
       },
     );
-    fireEvent.click(screen.getByRole("link"));
+    fireEvent.click(screen.getByRole("link", { name: "A thread" }));
     expect(rendered.sidebarActionCalls).toContainEqual({
       method: "open",
       threadId: "thr_open",
@@ -165,7 +358,9 @@ describe("ThreadInbox", () => {
 
   it("opens in a split with the platform modifier held", () => {
     const rendered = render([thread({ id: "thr_split" })]);
-    fireEvent.click(screen.getByRole("link"), { metaKey: true });
+    fireEvent.click(screen.getByRole("link", { name: "A thread" }), {
+      metaKey: true,
+    });
     expect(rendered.sidebarActionCalls).toContainEqual({
       method: "open",
       threadId: "thr_split",

@@ -6,6 +6,12 @@
 // understands. Here, uninstalling the plugin removes its state with it.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import {
+  ARCHIVED_CHANNEL,
+  ARCHIVED_LIST_LIMIT,
+  archivedThreadRowSchema,
+  type ArchivedThreadRow,
+} from "./archived-contract";
 import { resolveCloudOrigin } from "./resolve-cloud-origin";
 
 const migrations = [
@@ -33,6 +39,74 @@ interface LifecycleDbRow {
 
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
 
+function mapArchivedRow(row: {
+  id: string;
+  projectId: string;
+  title: string | null;
+  titleFallback: string | null;
+  parentThreadId: string | null;
+  sectionId: string | null;
+  originKind: "fork" | null;
+  originPluginId: string | null;
+  providerId: string;
+  hasPendingInteraction: boolean;
+  activity: {
+    activeBackgroundAgentCount: number;
+    activeBackgroundCommandCount: number;
+    activeGoalCount: number;
+    activePlanModeCount: number;
+    activeWorkflowCount: number;
+  };
+  pinnedAt: number | null;
+  environmentId: string | null;
+  environmentName: string | null;
+  environmentBranchName: string | null;
+  environmentProviderId: string | null;
+  environmentWorkspaceDisplayKind:
+    | "managed-worktree"
+    | "unmanaged-worktree"
+    | "other";
+  createdAt: number;
+  updatedAt: number;
+  lastReadAt: number | null;
+  latestAttentionAt: number;
+}): ArchivedThreadRow {
+  return archivedThreadRowSchema.parse({
+    id: row.id,
+    projectId: row.projectId,
+    title: row.title,
+    titleFallback: row.titleFallback,
+    parentThreadId: row.parentThreadId,
+    sectionId: row.sectionId,
+    originKind: row.originKind,
+    originPluginId: row.originPluginId,
+    providerId: row.providerId,
+    hasPendingInteraction: row.hasPendingInteraction,
+    activity: {
+      workflows: row.activity.activeWorkflowCount,
+      backgroundAgents: row.activity.activeBackgroundAgentCount,
+      backgroundCommands: row.activity.activeBackgroundCommandCount,
+      planMode: row.activity.activePlanModeCount,
+      goals: row.activity.activeGoalCount,
+    },
+    isPinned: row.pinnedAt !== null,
+    environment:
+      row.environmentId === null
+        ? null
+        : {
+            id: row.environmentId,
+            name: row.environmentName,
+            branchName: row.environmentBranchName,
+            providerId: row.environmentProviderId,
+            workspaceDisplayKind: row.environmentWorkspaceDisplayKind,
+          },
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    lastReadAt: row.lastReadAt,
+    latestAttentionAt: row.latestAttentionAt,
+  });
+}
+
 export const t3sidebarRpcContract = defineRpcContract({
   listLifecycle: {
     input: z.object({}),
@@ -57,6 +131,20 @@ export const t3sidebarRpcContract = defineRpcContract({
       localOrigin: z.string(),
       cloudOrigin: z.string().nullable(),
     }),
+  },
+  /** Archived threads for the sidebar Archive toggle (host feed excludes them). */
+  listArchived: {
+    input: z.object({
+      projectId: z.string().trim().min(1).optional(),
+    }),
+    output: z.object({
+      threads: z.array(archivedThreadRowSchema),
+      truncated: z.boolean(),
+    }),
+  },
+  unarchive: {
+    input: threadIdSchema,
+    output: z.object({ ok: z.boolean() }),
   },
   settle: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
   unsettle: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
@@ -113,6 +201,10 @@ export default function plugin(bb: BbPluginApi) {
     bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
   };
 
+  const publishArchivedChanged = (): void => {
+    bb.realtime.publish(ARCHIVED_CHANNEL, { type: "changed" });
+  };
+
   bb.rpc.register(t3sidebarRpcContract, {
     async listLifecycle() {
       return { rows: readAll() };
@@ -122,6 +214,41 @@ export default function plugin(bb: BbPluginApi) {
         localOrigin: bb.server.loopbackBaseUrl.replace(/\/$/, ""),
         cloudOrigin: await resolveCloudOrigin(),
       };
+    },
+    async listArchived({ projectId }) {
+      const pageSize = 100;
+      const threads: ArchivedThreadRow[] = [];
+      let offset = 0;
+      let truncated = false;
+      for (;;) {
+        const page = await bb.sdk.threads.list({
+          archived: true,
+          includeHidden: true,
+          ...(projectId ? { projectId } : {}),
+          limit: pageSize,
+          offset,
+        });
+        if (!Array.isArray(page) || page.length === 0) break;
+        for (const row of page) {
+          if (threads.length >= ARCHIVED_LIST_LIMIT) {
+            truncated = true;
+            break;
+          }
+          try {
+            threads.push(mapArchivedRow(row));
+          } catch {
+            // Skip malformed rows rather than failing the whole archive list.
+          }
+        }
+        if (truncated || page.length < pageSize) break;
+        offset += page.length;
+      }
+      return { threads, truncated };
+    },
+    async unarchive({ threadId }) {
+      await bb.sdk.threads.unarchive({ threadId });
+      publishArchivedChanged();
+      return { ok: true };
     },
     async settle({ threadId }) {
       // Settling clears any snooze: they are two answers to the same
@@ -158,5 +285,12 @@ export default function plugin(bb: BbPluginApi) {
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", ({ thread }) => {
     clear(thread.id);
+    publishArchivedChanged();
+  });
+  bb.events.on("thread.archived", () => {
+    publishArchivedChanged();
+  });
+  bb.events.on("thread.unarchived", () => {
+    publishArchivedChanged();
   });
 }

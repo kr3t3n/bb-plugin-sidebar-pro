@@ -6,7 +6,7 @@
 // and read the real source: https://github.com/get-bb/bb
 
 import * as react from 'react';
-import { ComponentType, ComponentPropsWithoutRef, ReactNode } from 'react';
+import { ComponentType, ComponentPropsWithoutRef, CSSProperties, ReactNode } from 'react';
 import { z } from 'zod';
 
 /**
@@ -15,8 +15,16 @@ import { z } from 'zod';
  * Host boundaries still validate values at runtime because TypeScript cannot
  * exclude non-finite numbers and plugin bundles can bypass static types.
  */
-type JsonValue = string | number | boolean | null | JsonValue[] | {
-    [key: string]: JsonValue;
+type JsonValue$1 = string | number | boolean | null | JsonValue$1[] | {
+    [key: string]: JsonValue$1;
+};
+/**
+ * A `JsonValue` that is read-only at every depth. BB uses it for JSON
+ * snapshots it deep-freezes before handing them to a plugin, where any write
+ * throws at runtime.
+ */
+type ReadonlyJsonValue = string | number | boolean | null | readonly ReadonlyJsonValue[] | {
+    readonly [key: string]: ReadonlyJsonValue;
 };
 
 /** A JSON-safe path segment reported by a Standard Schema validation issue. */
@@ -35,7 +43,7 @@ interface PluginRpcError {
     issues?: PluginRpcValidationIssue[];
 }
 /**
- * The validator-neutral subset of Standard Schema v1 used by plugin RPC.
+ * The validator-neutral subset of Standard Schema v1 used by plugin contracts.
  * Zod 4 schemas implement this interface directly; other validators can do
  * the same without becoming part of BB's public protocol.
  */
@@ -75,6 +83,39 @@ type PluginRpcHandlers<Contract extends PluginRpcContract> = {
 type PluginRpcCallInput<Method extends PluginRpcMethodContract> = StandardSchemaV1InferInput<Method["input"]>;
 type PluginRpcCallArgs<Method extends PluginRpcMethodContract> = null extends PluginRpcCallInput<Method> ? [input?: PluginRpcCallInput<Method>] : [input: PluginRpcCallInput<Method>];
 type PluginRpcResult<Method extends PluginRpcMethodContract> = StandardSchemaV1InferOutput<Method["output"]>;
+
+interface JsonObject {
+    [key: string]: JsonValue;
+}
+type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+
+declare const environmentWorkspaceDisplayKindSchema: z.ZodEnum<{
+    "managed-worktree": "managed-worktree";
+    "unmanaged-worktree": "unmanaged-worktree";
+    other: "other";
+}>;
+type EnvironmentWorkspaceDisplayKind = z.infer<typeof environmentWorkspaceDisplayKindSchema>;
+
+declare const workspaceGitOperationSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    kind: z.ZodLiteral<"none">;
+}, z.core.$strip>, z.ZodObject<{
+    hasConflicts: z.ZodBoolean;
+    kind: z.ZodLiteral<"merge">;
+}, z.core.$strip>, z.ZodObject<{
+    hasConflicts: z.ZodBoolean;
+    kind: z.ZodLiteral<"rebase">;
+}, z.core.$strip>, z.ZodObject<{
+    hasConflicts: z.ZodBoolean;
+    kind: z.ZodLiteral<"cherry-pick">;
+}, z.core.$strip>, z.ZodObject<{
+    hasConflicts: z.ZodBoolean;
+    kind: z.ZodLiteral<"revert">;
+}, z.core.$strip>, z.ZodObject<{
+    hasConflicts: z.ZodBoolean;
+    kind: z.ZodLiteral<"unknown">;
+    reason: z.ZodString;
+}, z.core.$strip>], "kind">;
+type WorkspaceGitOperation = z.infer<typeof workspaceGitOperationSchema>;
 
 declare const reasoningLevelSchema: z.ZodEnum<{
     high: "high";
@@ -294,6 +335,18 @@ declare const createThreadEnvironmentArgsSchema: z.ZodDiscriminatedUnion<[z.ZodO
     }, z.core.$strip>], "type">;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"project-default">;
+}, z.core.$strip>, z.ZodObject<{
+    environmentProviderId: z.ZodString;
+    inputs: z.ZodDefault<z.ZodNullable<z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>>>;
+    machine: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        hostId: z.ZodString;
+        type: z.ZodLiteral<"existing">;
+    }, z.core.$strip>, z.ZodObject<{
+        inputs: z.ZodDefault<z.ZodNullable<z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>>>;
+        machineProviderId: z.ZodString;
+        type: z.ZodLiteral<"new">;
+    }, z.core.$strip>], "type">>;
+    type: z.ZodLiteral<"provider">;
 }, z.core.$strip>], "type">;
 type CreateThreadEnvironmentArgs = z.infer<typeof createThreadEnvironmentArgsSchema>;
 
@@ -341,6 +394,14 @@ interface PluginHomepageSectionProps {
  */
 interface PluginSettingsSectionProps {
 }
+/**
+ * Props passed to an `experimental_appOverlay` component.
+ *
+ * Deliberately empty while the component reads live app state through SDK
+ * hooks; versioned additive like the other slot props.
+ */
+interface ExperimentalAppOverlayProps {
+}
 /** Props passed to a `navPanel` component (it owns its whole route). */
 interface PluginNavPanelProps {
     /**
@@ -366,7 +427,7 @@ interface PluginThreadPanelProps {
      * through persistence, so the tab restores across reloads); null when the
      * action opened the panel without params.
      */
-    params: JsonValue | null;
+    params: JsonValue$1 | null;
 }
 /** Props passed to a panel tab opened by `experimental_newThreadPanelAction`. */
 interface PluginNewThreadPanelProps {
@@ -377,19 +438,19 @@ interface PluginNewThreadPanelProps {
      * through persistence, so the tab restores across reloads); null when the
      * action opened the panel without params.
      */
-    params: JsonValue | null;
+    params: JsonValue$1 | null;
 }
 interface PluginPendingInteractionView {
     id: string;
     threadId: string;
     title: string;
-    payload: JsonValue;
+    payload: JsonValue$1;
     createdAt: number;
     expiresAt: number | null;
 }
 interface PluginPendingInteractionProps {
     interaction: PluginPendingInteractionView;
-    submit(value: JsonValue): Promise<void>;
+    submit(value: JsonValue$1): Promise<void>;
     cancel(): Promise<void>;
 }
 /**
@@ -397,6 +458,61 @@ interface PluginPendingInteractionProps {
  * Deliberately empty; the registration's `run` carries the behavior.
  */
 interface PluginSidebarFooterActionProps {
+}
+/** Props passed to an experimental sidebar-footer disclosure component. */
+interface ExperimentalSidebarFooterDisclosureProps {
+    /** Hide this disclosure without affecting another plugin's open disclosure. */
+    dismiss(): void;
+}
+/** Display and accessibility metadata for a host-owned sidebar shortcut. */
+interface ExperimentalSidebarNavigationShortcut {
+    label: string;
+    ariaKeyShortcuts: string;
+}
+/** Host-owned behavior represented by one sidebar navigation item. */
+type ExperimentalSidebarNavigationAction = {
+    kind: "new-thread";
+} | {
+    kind: "search-threads";
+} | {
+    kind: "open-extensions";
+} | {
+    kind: "open-plugin-panel";
+    pluginId: string;
+    panelId: string;
+};
+/** Semantic icon identity for one sidebar navigation item. */
+type ExperimentalSidebarNavigationIcon = {
+    kind: "host";
+    name: "extensions" | "new-thread" | "search";
+} | {
+    kind: "plugin";
+    pluginId: string;
+    icon: string | null;
+};
+/** One host-owned destination or action a plugin may arrange. */
+interface ExperimentalSidebarNavigationItem {
+    id: string;
+    label: string;
+    icon: ExperimentalSidebarNavigationIcon;
+    action: ExperimentalSidebarNavigationAction;
+    isDisabled: boolean;
+    shortcut: ExperimentalSidebarNavigationShortcut | null;
+    experimental_splitProps: {
+        onPointerDown?: (event: react.PointerEvent<HTMLElement>) => void;
+    };
+}
+/** How the host should activate a sidebar navigation item. */
+interface ExperimentalSidebarNavigationActivationOptions {
+    openInSplit: boolean;
+}
+/** Props passed to an `experimental_sidebarNavigation` component. */
+interface ExperimentalSidebarNavigationProps {
+    items: readonly ExperimentalSidebarNavigationItem[];
+    activeItemId: string | null;
+    isCompactViewport: boolean;
+    experimental_activate(itemId: string, options: ExperimentalSidebarNavigationActivationOptions): void;
+    experimental_Original: ComponentType;
 }
 /**
  * Props passed to an `experimental_threadList` component — the sidebar's
@@ -410,15 +526,14 @@ interface PluginThreadListProps {
     /** True on phone-width viewports and coarse pointers. */
     isCompactViewport: boolean;
     /**
-     * Call after the user opens a thread. It closes the mobile sidebar drawer,
-     * and it clears the host search field on every viewport. Always call it, or
-     * the sidebar stays in search mode after the thread opens.
+     * Call after the user opens a thread. It closes the mobile sidebar drawer.
      */
     onNavigate: () => void;
     /**
-     * The host search field's current text, or "" when the field is closed.
-     * The host owns that field, so a plugin list filters by this rather than
-     * shipping a second search box.
+     * Compatibility value for the former sidebar search field. BB now searches
+     * threads in the quick palette, so the host always supplies "".
+     *
+     * @deprecated The quick palette owns thread search. Ignore this value.
      */
     searchQuery: string;
     /**
@@ -474,6 +589,18 @@ interface PluginFileOpenerSource {
 interface PluginFileOpenerProps {
     path: string;
     source: PluginFileOpenerSource;
+    /**
+     * One-based, inclusive lines requested by the latest file open, or null when
+     * untargeted. BB supplies a new object for each targeted open, including an
+     * identical target in the active tab. Observe object identity to navigate
+     * again; keep the editor model intact. Older hosts may omit this prop.
+     *
+     * @experimental Audit navigation, remount, and persistence semantics before stabilizing.
+     */
+    experimental_lineRange?: {
+        startLineNumber: number;
+        endLineNumber: number;
+    } | null;
     /**
      * BB's file preview, bound to this file. Render it to delegate conditionally
      * without re-entering plugin replacement resolution.
@@ -657,15 +784,30 @@ interface PluginSettingsSectionRegistration {
     component: ComponentType<PluginSettingsSectionProps>;
 }
 /**
+ * Render app-wide plugin UI outside BB's layout regions.
+ *
+ * The host mounts each registration once per app window through the ordinary
+ * plugin React boundary. The component therefore keeps PluginContext, router,
+ * query, realtime, and other app-level SDK contexts when it renders fixed UI
+ * or creates a React portal. BB supplies no chrome, positioning, visibility,
+ * or interaction policy; the plugin owns those details and responsive
+ * behavior. Registrations are additive and a crash hides only that overlay.
+ */
+interface ExperimentalAppOverlayRegistration {
+    /** Unique within the plugin; letters, digits, `-`, `_`. */
+    id: string;
+    component: ComponentType<ExperimentalAppOverlayProps>;
+}
+/**
  * Owner-defined validator for a fixed tab's transient target. The host first
  * verifies that the value is JSON-safe, then calls this validator before
  * selecting the tab or delivering the target.
  */
-interface ExperimentalFixedTabTargetContract<Target extends JsonValue> {
-    validate(value: JsonValue): value is Target;
+interface ExperimentalFixedTabTargetContract<Target extends JsonValue$1> {
+    validate(value: JsonValue$1): value is Target;
 }
 /** Stable, owner-scoped reference used by the app-panel controller. */
-type ExperimentalPluginFixedTabReference<Target extends JsonValue = never> = {
+type ExperimentalPluginFixedTabReference<Target extends JsonValue$1 = never> = {
     /** The owning `navPanel` id; validated against the containing registration. */
     readonly panelId: string;
     /** Unique within the owning nav panel; letters, digits, `-`, `_`. */
@@ -678,7 +820,7 @@ type ExperimentalPluginFixedTabReference<Target extends JsonValue = never> = {
     readonly experimental_target: ExperimentalFixedTabTargetContract<Target>;
 });
 /** A fixed tab declared by a plugin nav panel. */
-type PluginFixedTabRegistration<Target extends JsonValue = never> = ExperimentalPluginFixedTabReference<Target> & {
+type PluginFixedTabRegistration<Target extends JsonValue$1 = never> = ExperimentalPluginFixedTabReference<Target> & {
     title: string;
     /** Icon hint (BB icon name); unknown names fall back to a generic icon. */
     icon: string;
@@ -687,7 +829,7 @@ type PluginFixedTabRegistration<Target extends JsonValue = never> = Experimental
     layout?: "flush" | "padded";
 };
 /** A fixed tab with either no target or an owner-validated JSON target. */
-type PluginFixedTabDeclaration = PluginFixedTabRegistration | PluginFixedTabRegistration<JsonValue>;
+type PluginFixedTabDeclaration = PluginFixedTabRegistration | PluginFixedTabRegistration<JsonValue$1>;
 interface PluginNavPanelRegistration {
     /** Unique within the plugin; letters, digits, `-`, `_`. */
     id: string;
@@ -741,7 +883,7 @@ interface PluginPanelActionOpenOptions {
      * Persisted with the tab and handed to the component as its `params` prop.
      * Must be a JSON value; anything else is a declined open.
      */
-    params?: JsonValue;
+    params?: JsonValue$1;
 }
 /**
  * Context handed to a `threadPanelAction`'s `run`.
@@ -870,6 +1012,46 @@ interface PluginSidebarFooterActionRegistration {
      */
     run(context: PluginSidebarFooterActionContext): void | Promise<void>;
 }
+/** Context handed to an experimental sidebar-footer action. */
+interface ExperimentalSidebarFooterActionContext {
+    /** Navigate to this plugin's detail page in Tools. */
+    openPluginDetails(): void;
+}
+/** Fields shared by both experimental sidebar-footer item behaviors. */
+interface ExperimentalSidebarFooterItemBase {
+    /** Unique within the plugin's unified sidebar footer; letters, digits, `-`, `_`. */
+    id: string;
+    /** Tooltip and accessible label for the host-rendered icon button. */
+    label: string;
+    /** BB icon-name hint; unknown names fall back to a generic icon. */
+    icon: string;
+}
+/** A sidebar-footer item that runs a callback when activated. */
+interface ExperimentalSidebarFooterActionRegistration extends ExperimentalSidebarFooterItemBase {
+    kind: "action";
+    onActivate(context: ExperimentalSidebarFooterActionContext): void | Promise<void>;
+}
+/** A sidebar-footer item that reveals plugin-rendered content above the row. */
+interface ExperimentalSidebarFooterDisclosureRegistration extends ExperimentalSidebarFooterItemBase {
+    kind: "disclosure";
+    component: ComponentType<ExperimentalSidebarFooterDisclosureProps>;
+}
+/** One host-rendered item in the app sidebar footer. */
+type ExperimentalSidebarFooterItemRegistration = ExperimentalSidebarFooterActionRegistration | ExperimentalSidebarFooterDisclosureRegistration;
+/** Live controls for an experimental sidebar-footer disclosure. */
+interface ExperimentalSidebarFooterDisclosureController {
+    /** Request that the host open this disclosure, replacing any open sibling. */
+    open(): void;
+    /** Close this disclosure if it is currently open. */
+    close(): void;
+    /** Open this disclosure, or close it when it is currently open. */
+    toggle(): void;
+}
+/** Managed registration surface for items in the app sidebar footer. */
+interface ExperimentalSidebarFooter {
+    register(registration: ExperimentalSidebarFooterActionRegistration): void;
+    register(registration: ExperimentalSidebarFooterDisclosureRegistration): ExperimentalSidebarFooterDisclosureController;
+}
 /**
  * The one status bb would paint for a thread, already resolved through the
  * host's precedence (attention before work; plan and goal before the generic
@@ -884,11 +1066,6 @@ interface PluginSidebarFooterActionRegistration {
  * one.
  */
 type PluginSidebarThreadIndicator = "background-agent" | "background-command" | "draft" | "goal" | "none" | "plan-mode" | "runtime" | "unread-error" | "unread-success" | "waiting-for-input" | "workflow" | "working-draft";
-/**
- * How a thread's environment presents its workspace: a worktree bb manages,
- * a worktree the user manages, or anything else (a plain checkout).
- */
-type PluginSidebarWorkspaceKind = "managed-worktree" | "other" | "unmanaged-worktree";
 /** Live work counts on a thread. All zero means nothing is running. */
 interface PluginSidebarThreadActivity {
     workflows: number;
@@ -937,7 +1114,14 @@ interface PluginSidebarThread {
         id: string | null;
         name: string | null;
         branchName: string | null;
-        workspaceDisplayKind: PluginSidebarWorkspaceKind;
+        /**
+         * The id of the environment provider that produced this environment, or
+         * null for a project's own checkout. Resolve it against
+         * `GET /system/environment-providers` for a display name and icon.
+         */
+        providerId: string | null;
+        /** @deprecated Use providerId and the environment provider catalog instead. */
+        workspaceDisplayKind: EnvironmentWorkspaceDisplayKind | null;
     } | null;
     /**
      * The machine this thread's work runs on, with the name resolved for you.
@@ -998,6 +1182,53 @@ interface PluginSidebarThreadsState {
 interface PluginProvidersState {
     status: "error" | "loading" | "ready";
     providers: readonly ProviderInfo[];
+}
+/**
+ * One TextMate token rule from the active code theme, in the shape VS Code
+ * theme files author it.
+ */
+interface PluginCodeThemeTokenRule {
+    /** Scope(s) the rule paints; absent means the theme's base rule. */
+    scope?: string | readonly string[];
+    settings: {
+        /** `#rrggbb` or `#rrggbbaa`. */
+        foreground?: string;
+        background?: string;
+        /** Space-separated TextMate font styles, e.g. `"bold italic"`. */
+        fontStyle?: string;
+    };
+}
+/**
+ * The active code theme as a VS Code theme file: the same document BB's own
+ * highlighter renders from, so a plugin that embeds a third-party editor can
+ * translate it into that editor's theme format rather than guessing colors
+ * from CSS variables.
+ */
+interface PluginCodeThemeData {
+    /** Registered theme name — a bundled Shiki name or a BB-registered id. */
+    name: string;
+    type: "dark" | "light";
+    /** Default editor foreground, as `#rrggbb[aa]`. */
+    fg: string;
+    /** Default editor background, as `#rrggbb[aa]`. */
+    bg: string;
+    /** VS Code workbench colors (`editor.background`, `editorCursor.foreground`, …). */
+    colors: Readonly<Record<string, string>>;
+    tokenColors: readonly PluginCodeThemeTokenRule[];
+}
+/**
+ * The code theme BB is currently rendering with (see
+ * {@link PluginSdkApp.experimental_useCodeTheme}). `mode` and `name` change
+ * the moment the user switches palette or light/dark; `theme` follows once
+ * the theme file resolves, and keeps the previous document until then so a
+ * consumer never has to paint an unthemed frame. Compare `theme.name` with
+ * `name` to tell a settled state from one still resolving.
+ */
+interface PluginCodeThemeState {
+    mode: "dark" | "light";
+    name: string;
+    /** null only before the first theme file resolves. */
+    theme: PluginCodeThemeData | null;
 }
 /**
  * Act on threads from a plugin surface. Every method routes to the host's own
@@ -1116,7 +1347,7 @@ interface PluginSidebarThreadSplit {
  * leaving the user with no sidebar.
  *
  * The plugin gets the scrolling list and nothing else. The New-thread button,
- * the search field, the plugin nav rows, and the footer stay host-rendered in
+ * the search action, the plugin nav rows, and the footer stay host-rendered in
  * every sidebar — they are shared surfaces (other plugins live in two of
  * them), and a replaced list must not be able to remove them.
  */
@@ -1128,6 +1359,16 @@ interface PluginThreadListRegistration {
     /** Optional one-line description shown with the provider choice. */
     description?: string;
     component: ComponentType<PluginThreadListProps>;
+}
+/** Replace the bounded navigation controls above the sidebar thread list. */
+interface ExperimentalSidebarNavigationRegistration {
+    /** Unique within the plugin; letters, digits, `-`, `_`. */
+    id: string;
+    /** Label shown in Settings → Appearance and capability details. */
+    title: string;
+    /** Optional one-line description shown with the provider choice. */
+    description?: string;
+    component: ComponentType<ExperimentalSidebarNavigationProps>;
 }
 /**
  * Register this plugin as a viewer/editor for file extensions. By default,
@@ -1300,20 +1541,21 @@ interface PluginCommandPaletteActionRegistration {
     run(context: PluginCommandPaletteActionContext): void | Promise<void>;
 }
 /**
- * Supply the inline React mark bb draws for one agent provider.
+ * Supply an inline React mark for a provider. Agent, machine, and environment
+ * icon renderers select the mark by provider kind and id.
+ * Only surfaces using the provider icon renderer consult this slot. Persistent
+ * machine labels use a laptop glyph directly.
  *
- * A manifest `branding.icon` (or a provider's `logoUrl`) is fetched and drawn
- * through `<img>`, a separate document where `currentColor` resolves to black
- * — invisible on dark themes and unreachable from app CSS. A component is
- * rendered inline, so it inherits the app's theme colors and the host's sizing
- * classes. Register a static color logo as a file and a theme-aware mark here.
+ * Provider logo assets use a currentColor mask. Inline components can also
+ * render multiple colors and inherit the app's theme and sizing classes.
  *
- * The host passes only `className` (sizing plus the provider's color class);
+ * The host passes `className` for sizing; color inherits from its wrapper.
  * the component must render an inline SVG (or other inline markup) and must
- * not fetch. One registration per provider id per plugin; when two plugins
- * claim the same provider id the host keeps the first by plugin id and warns.
+ * not fetch. One registration per provider kind and id per plugin; when two
+ * plugins claim the same pair the host keeps the first by plugin id and warns.
  */
 interface PluginProviderIconRegistration {
+    providerKind: "agent" | "environment" | "machine";
     /**
      * The provider this mark is for — the id bb knows the provider by (the
      * provider declaration's id, e.g. `codex` or `acp-cursor`), not the plugin
@@ -1372,7 +1614,7 @@ interface PluginTimelineRendererProps {
      * plugin's declared schema at ingest), or for a `"tool"` row the call's
      * `{ arguments, output }`.
      */
-    payload: JsonValue;
+    payload: JsonValue$1;
     /**
      * The bridge's presentation for the row. Null only for a generic tool row
      * persisted before bridges attached presentation (grammar v2); an
@@ -1413,9 +1655,92 @@ interface PluginTimelineRendererRegistration {
     kind: string;
     component: ComponentType<PluginTimelineRendererProps>;
 }
+/**
+ * Props passed to an `experimental_environmentProviderInputs` component — the
+ * control the New Thread environment picker renders beside this plugin's
+ * selected environment provider, for the provider's declared `inputs`.
+ */
+interface PluginEnvironmentProviderInputsProps {
+    /** Project selected in the composer; null in projectless compose. */
+    projectId: string | null;
+    /** Whether setup uses an existing host or provisions a new host before create. */
+    target: {
+        kind: "existing-host";
+        hostId: string;
+    } | {
+        kind: "new-host";
+    };
+    /**
+     * The `inputs` value the selection will carry: null until `onChange`
+     * supplies one.
+     * The server parses it with the provider's `inputs` schema at create time,
+     * so the component only has to produce a value that schema accepts.
+     */
+    value: JsonValue$1 | null;
+    /**
+     * Replace the inputs that will be submitted or block submission with the
+     * reason the control should show.
+     */
+    onChange(next: PluginEnvironmentProviderInputsChange): void;
+}
+type PluginEnvironmentProviderInputsChange = {
+    status: "ready";
+    value: JsonValue$1;
+} | {
+    status: "blocked";
+    reason: string;
+};
+/**
+ * Supply the control for one of this plugin's environment providers that
+ * declared `inputs` (registered server-side via
+ * `bb.experimental_environments.register`). The New Thread environment picker
+ * renders the component beside the picker while that provider is selected and
+ * submits the component's latest `onChange` value as the selection's `inputs`.
+ * A provider whose schema rejects empty inputs cannot be submitted without a
+ * registration that reports ready inputs.
+ */
+interface PluginEnvironmentProviderInputsRegistration {
+    /** The environment provider id this control supplies inputs for. */
+    environmentProviderId: string;
+    component: ComponentType<PluginEnvironmentProviderInputsProps>;
+}
+/**
+ * Props passed to an `experimental_machineProviderInputs` component. Machine
+ * inputs are persisted and readable by every plugin, so they must contain only
+ * non-secret configuration and references to credentials held in plugin
+ * settings.
+ */
+interface PluginMachineProviderInputsProps {
+    /** The value persisted with the machine selection. */
+    value: JsonValue$1 | null;
+    /** Replace the submitted value or block submission with a visible reason. */
+    onChange(next: PluginMachineProviderInputsChange): void;
+}
+type PluginMachineProviderInputsChange = {
+    status: "ready";
+    value: JsonValue$1;
+} | {
+    status: "blocked";
+    reason: string;
+};
+/**
+ * Supply the inputs control for one machine provider registered server-side
+ * through `bb.experimental_machines.register`.
+ */
+interface PluginMachineProviderInputsRegistration {
+    /** The machine provider id this control supplies inputs for. */
+    machineProviderId: string;
+    component: ComponentType<PluginMachineProviderInputsProps>;
+}
 interface PluginAppSlots {
     homepageSection(registration: PluginHomepageSectionRegistration): void;
     settingsSection(registration: PluginSettingsSectionRegistration): void;
+    /**
+     * Render one app-wide overlay component (see
+     * {@link ExperimentalAppOverlayRegistration}). Experimental: see
+     * docs/api_to_audit.md.
+     */
+    experimental_appOverlay(registration: ExperimentalAppOverlayRegistration): void;
     navPanel(registration: PluginNavPanelRegistration): void;
     /**
      * Add an action to an existing thread's panel launcher. This slot is
@@ -1430,6 +1755,8 @@ interface PluginAppSlots {
     experimental_newThreadPanelAction(registration: PluginNewThreadPanelActionRegistration): void;
     pendingInteraction(registration: PluginPendingInteractionRegistration): void;
     sidebarFooterAction(registration: PluginSidebarFooterActionRegistration): void;
+    /** Replace the bounded sidebar navigation controls. */
+    experimental_sidebarNavigation(registration: ExperimentalSidebarNavigationRegistration): void;
     /**
      * Replace the sidebar's thread list (see
      * {@link PluginThreadListRegistration}). Experimental: see
@@ -1463,8 +1790,8 @@ interface PluginAppSlots {
      */
     commandPaletteAction(registration: PluginCommandPaletteActionRegistration): void;
     /**
-     * Draw one agent provider's icon with an inline React component instead of
-     * its `<img>`-rendered logo file (see
+     * Draw one agent, environment, or machine provider's icon with an inline
+     * React component instead of its masked logo asset (see
      * {@link PluginProviderIconRegistration}). Experimental: see
      * docs/api_to_audit.md.
      */
@@ -1476,6 +1803,19 @@ interface PluginAppSlots {
      * docs/api_to_audit.md.
      */
     experimental_timelineRenderer(registration: PluginTimelineRendererRegistration): void;
+    /**
+     * Supply the inputs control the New Thread environment picker renders
+     * beside one of this plugin's selected environment providers (see
+     * {@link PluginEnvironmentProviderInputsRegistration}). Experimental:
+     * see docs/api_to_audit.md.
+     */
+    experimental_environmentProviderInputs(registration: PluginEnvironmentProviderInputsRegistration): void;
+    /**
+     * Supply the non-secret machine inputs control rendered by machine creation
+     * surfaces (see {@link PluginMachineProviderInputsRegistration}).
+     * Experimental: see docs/api_to_audit.md.
+     */
+    experimental_machineProviderInputs(registration: PluginMachineProviderInputsRegistration): void;
 }
 interface PluginAppComposer {
     customize(registration: ComposerCustomization): void;
@@ -1523,10 +1863,68 @@ interface PluginContentScriptRegistration {
 interface PluginAppContentScripts {
     register(registration: PluginContentScriptRegistration): void;
 }
+interface ExperimentalIconProps {
+    name: string;
+    /** Used when the requested name is missing; defaults to the host Zap icon. */
+    fallback?: string;
+    className?: string;
+    style?: CSSProperties;
+    "aria-hidden"?: boolean | "false" | "true";
+    "aria-label"?: string;
+}
+/** Shared agent, machine, or environment artwork without fetching metadata. */
+interface ExperimentalProviderIconProps {
+    /** Keeps same-id agent, machine, and environment providers distinct. */
+    providerKind: PluginProviderIconRegistration["providerKind"];
+    /**
+     * Existing agent, machine, or environment provider record. Reads id, logoUrl, icon and
+     * strings.iconTint; other fields are ignored. An id-only record is sufficient
+     * when only frontend registrations and fallback are needed. Does not fetch.
+     */
+    provider: {
+        id: string;
+        logoUrl?: string | null;
+        /** Agent providers use { glyph }; machine and environment providers use a string. */
+        icon?: {
+            glyph: string;
+        } | string | null;
+        strings?: {
+            iconTint?: {
+                light: string;
+                dark: string;
+            } | null;
+        } | null;
+    };
+    /** Used when no artwork is available; defaults to Code. */
+    fallback?: string;
+    className?: string;
+    "aria-hidden"?: boolean | "false" | "true";
+    "aria-label"?: string;
+}
+interface ExperimentalIconRegistration {
+    /** Shared app name. Namespacing is recommended, but not required. */
+    name: string;
+    /** Inline artwork. Honor className for sizing; use currentColor for tint. */
+    component: ComponentType<{
+        className?: string;
+    }>;
+}
+interface ExperimentalAppIcons {
+    /**
+     * Add or override an app icon during setup. Returns nothing; the host
+     * replaces registrations on reload and removes them on unload. Duplicate
+     * names within a plugin reject setup. Between plugins, the first plugin id
+     * in lexical order wins, independent of bundle load order.
+     */
+    register(registration: ExperimentalIconRegistration): void;
+}
 interface PluginAppBuilder {
+    experimental_icons: ExperimentalAppIcons;
     slots: PluginAppSlots;
     composer: PluginAppComposer;
     contentScripts: PluginAppContentScripts;
+    /** Experimental managed region for actions and disclosures in the sidebar footer. */
+    experimental_sidebarFooter: ExperimentalSidebarFooter;
 }
 type PluginAppSetup = (app: PluginAppBuilder) => void;
 /**
@@ -1553,7 +1951,7 @@ interface PluginSettingsState {
      * Effective non-secret setting values (secret settings are excluded —
      * read them server-side). Undefined while loading or unavailable.
      */
-    values: Record<string, string | boolean> | undefined;
+    values: Record<string, string | number | boolean> | undefined;
     isLoading: boolean;
 }
 /** State of the app's shared realtime connection to the bb server. */
@@ -1726,6 +2124,51 @@ interface PluginComposerApi {
     insertMention(mention: PluginComposerMention): void;
     /** Focus the composer caret at the end of the draft. */
     focus(): void;
+    /**
+     * Submit this composer's draft through the composer's OWN submit pipeline,
+     * queued until `sendAt` instead of dispatched now.
+     *
+     * This is a real submission, not a plugin-issued send: the host builds the
+     * request exactly as pressing Enter would, so the draft's attachments and
+     * @-mentions, and — in the new-thread composer — the provider, model,
+     * reasoning level, service tier, permission mode and environment the user
+     * has selected on screen, all travel with it. A plugin cannot assemble that
+     * tuple itself, which is why sending from the backend instead would silently
+     * run the message with different settings than the ones in front of the user.
+     *
+     * In a thread composer the message is queued as a row instead of being
+     * sent or queued for the next idle moment. In the new-thread composer the
+     * thread is created `pending` and its first message becomes the queued row.
+     * Either way the resulting row is core's: the queued card above the
+     * composer, the countdown, Send now and Delete all work with no further
+     * plugin involvement.
+     *
+     * Resolves once the host has accepted the submission and cleared the draft.
+     * Rejects when the composer refused to submit — a scope with no submit
+     * pipeline (a queued-message editor, a side chat), an empty draft, or a
+     * composer that is not ready (still loading its execution defaults, missing
+     * an environment). The rejection's message is safe to show to the user.
+     * Failures of the underlying request are reported by bb's own submit error
+     * handling and restore the draft, exactly as an interactive failure does.
+     *
+     * Experimental: see docs/api_to_audit.md.
+     */
+    experimental_submit(options: ExperimentalComposerSubmitOptions): Promise<void>;
+}
+/**
+ * What `experimental_submit` does differently from pressing Enter.
+ *
+ * There is deliberately no zero-argument overload and no "submit now" arm: a
+ * plugin that wants a draft sent immediately is asking for the affordance the
+ * user already has, and handing plugins an unconditional "send this draft"
+ * button is a much larger surface than scheduling needs.
+ */
+interface ExperimentalComposerSubmitOptions {
+    /**
+     * Epoch ms the submission should dispatch at. Must be in the future; the
+     * host does not second-guess how far ahead it is.
+     */
+    sendAt: number;
 }
 /**
  * A consumer-supplied action on the messages of one `ThreadChat` instance,
@@ -1793,7 +2236,13 @@ interface ThreadChatProps {
      */
     messageActions?: readonly ThreadChatMessageAction[];
 }
-/** The controlled execution selection resolved by the picker. */
+/**
+ * The controlled execution selection resolved by the picker.
+ *
+ * Deliberately a single concrete shape, not a union: this value exists to be
+ * forwarded verbatim to `bb.sdk.threads.spawn`, so it must name a real
+ * provider and model.
+ */
 interface ExperimentalProviderModelPickerValue {
     providerId: string;
     model: string;
@@ -1829,6 +2278,65 @@ interface ExperimentalProviderModelPickerProps {
     /** Render the shared selection summary without allowing changes. */
     disabled?: boolean;
     className?: string;
+}
+/**
+ * Props of the host-owned `experimental_BranchPicker` component — bb's branch
+ * picker bundled with its branch-options loading for the given host and
+ * project, the control bb's own New Thread composer renders as "Branch from".
+ * The host owns fetching, searching, and refreshing the branch list; the
+ * caller owns only the selection.
+ */
+interface BranchPickerProps {
+    /**
+     * The enrolled machine whose project checkout supplies the branch list.
+     * Null renders the picker disabled with no options.
+     */
+    hostId: string | null;
+    /** The project whose source on `hostId` is listed; null disables loading. */
+    projectId: string | null;
+    /**
+     * The selected branch name, or null when no branch is chosen (the host
+     * shows its placeholder and the consumer falls back to its own default).
+     */
+    value: string | null;
+    /** Called with the picked branch name, or null when the pick is cleared. */
+    onChange(next: string | null): void;
+    /**
+     * Text placed before the branch on the trigger, e.g. "Base:". Omitted, the
+     * trigger is the branch alone.
+     */
+    label?: string;
+    /**
+     * The trigger while nothing is picked. Omitted, the host shows the resolved
+     * default worktree base branch muted, or a neutral `default` placeholder
+     * when the base cannot be resolved.
+     */
+    placeholder?: string;
+    /** Render the current selection without allowing changes. */
+    disabled?: boolean;
+}
+interface UseBranchesArgs {
+    hostId: string | null;
+    projectId: string | null;
+    query?: string;
+}
+interface BranchesState {
+    branches: readonly string[];
+    remoteBranches: readonly string[];
+    isLoading: boolean;
+    refresh(): Promise<void>;
+}
+interface UseCheckoutStateArgs {
+    hostId: string | null;
+    projectId: string | null;
+}
+interface CheckoutState {
+    isGit: boolean | null;
+    unborn: boolean;
+    detached: boolean;
+    dirty: boolean;
+    currentBranch: string | null;
+    operation: WorkspaceGitOperation;
 }
 /** Props of BB's controlled, host-resolved permission-mode picker. */
 interface ExperimentalPermissionModePickerProps {
@@ -1880,6 +2388,14 @@ interface NewThreadRequest {
     executionInputSources: CreateExecutionInputSources;
     environment: CreateThreadEnvironmentArgs;
     input: PromptInput[];
+    /**
+     * Epoch ms the first turn should dispatch at. Present only when the
+     * submission came from `useComposer().experimental_submit` — a scheduled
+     * create — and absent otherwise, which is what makes an ordinary submission
+     * start work at once. Forward it to `threads.spawn` unchanged: the thread is
+     * created `pending` and its first message is queued as a row until then.
+     */
+    sendAt?: number;
 }
 /**
  * Props of the host-owned `experimental_NewThreadComposer` component — bb's
@@ -1996,6 +2512,14 @@ interface MarkdownProps {
     /** Markdown source, rendered exactly like a chat message body. */
     content: string;
     className?: string;
+    /** Resolve local destinations from this document; omission keeps message routing. */
+    experimental_document?: {
+        threadId: string;
+        rootPath: string;
+        target: Exclude<ExperimentalLiveFileTarget, {
+            kind: "host";
+        }>;
+    };
 }
 /**
  * Props for BB's semantic URL link. The host owns ordinary activation while
@@ -2054,12 +2578,12 @@ type ExperimentalAppPanelSurface = {
  * and route remounts during the current app session, but is never persisted
  * across a refresh. Call `clear` when the owner returns to its untargeted state.
  */
-interface ExperimentalFixedTabTargetState<Target extends JsonValue> {
+interface ExperimentalFixedTabTargetState<Target extends JsonValue$1> {
     readonly sequence: number;
     readonly target: Target;
     clear(): void;
 }
-type ExperimentalOpenFixedTabOptions<Target extends JsonValue> = {
+type ExperimentalOpenFixedTabOptions<Target extends JsonValue$1> = {
     surface: ExperimentalAppPanelSurface;
     tab: ExperimentalPluginFixedTabReference<Target>;
     /** Omit to select the tab without replacing its current session target. */
@@ -2067,7 +2591,7 @@ type ExperimentalOpenFixedTabOptions<Target extends JsonValue> = {
 };
 /** Surface-aware controller for selecting owner-scoped fixed tabs. */
 interface ExperimentalAppPanel {
-    openFixedTab<Target extends JsonValue = never>(options: ExperimentalOpenFixedTabOptions<Target>): boolean;
+    openFixedTab<Target extends JsonValue$1 = never>(options: ExperimentalOpenFixedTabOptions<Target>): boolean;
 }
 /** Current app selection, derived from the route. */
 interface BbContext {
@@ -2120,6 +2644,15 @@ interface BbNavigate {
  * shims the specifier to that object on `globalThis.__bbPluginRuntime`.
  */
 interface PluginSdkApp {
+    experimental_Icon: ComponentType<ExperimentalIconProps>;
+    /**
+     * Render provider slot override, then its logo, then its glyph, then fallback.
+     * Pass a record from agent, machine, or environment provider queries;
+     * an id-only record resolves frontend registrations, without fetching metadata.
+     * Updates on plugin load, reload and unload. Throwing or recursive overrides
+     * fall back to declared artwork. Logo assets render as currentColor masks.
+     */
+    experimental_ProviderIcon: ComponentType<ExperimentalProviderIconProps>;
     definePluginApp(setup: PluginAppSetup): PluginAppDefinition;
     useRpc<Contract extends PluginRpcContract = PluginRpcContract>(): PluginRpcClient<Contract>;
     useRealtime(channel: string, handler: (payload: unknown) => void): void;
@@ -2136,7 +2669,7 @@ interface PluginSdkApp {
     /** Select one of this plugin's eligible fixed tabs on the current surface. */
     experimental_useAppPanel(): ExperimentalAppPanel;
     /** Read or clear the owning tab's validated, session-scoped target. */
-    experimental_useFixedTabTarget<Target extends JsonValue>(tab: ExperimentalPluginFixedTabReference<Target>): ExperimentalFixedTabTargetState<Target> | null;
+    experimental_useFixedTabTarget<Target extends JsonValue$1>(tab: ExperimentalPluginFixedTabReference<Target>): ExperimentalFixedTabTargetState<Target> | null;
     useComposer(): PluginComposerApi;
     /**
      * The sidebar's live thread view (see {@link PluginSidebarThreadsState}).
@@ -2184,6 +2717,13 @@ interface PluginSdkApp {
      */
     experimental_useProviders(): PluginProvidersState;
     /**
+     * The active code theme as a VS Code theme file (see
+     * {@link PluginCodeThemeState}), for a plugin that renders code with an
+     * engine of its own and needs BB's palette to reach it. Experimental: see
+     * docs/api_to_audit.md.
+     */
+    experimental_useCodeTheme(): PluginCodeThemeState;
+    /**
      * The host-owned chat component (see {@link ThreadChatProps}). Together
      * with `Markdown`, the only components the SDK ships — everything else
      * stays vendored per §5.5.
@@ -2221,6 +2761,23 @@ interface PluginSdkApp {
      */
     experimental_PermissionModePicker: ComponentType<ExperimentalPermissionModePickerProps>;
     /**
+     * BB's branch picker with its branch-options loading for one host and
+     * project (see {@link BranchPickerProps}) — the same control
+     * the New Thread composer renders as "Branch from". Experimental: see
+     * docs/api_to_audit.md.
+     */
+    experimental_BranchPicker: ComponentType<BranchPickerProps>;
+    /**
+     * Search and refresh the branch list for one project source. Experimental:
+     * see docs/api_to_audit.md.
+     */
+    experimental_useBranches(args: UseBranchesArgs): BranchesState;
+    /**
+     * Inspect the checkout state for one project source. Experimental: see
+     * docs/api_to_audit.md.
+     */
+    experimental_useCheckoutState(args: UseCheckoutStateArgs): CheckoutState;
+    /**
      * The host-owned source viewer (see {@link SourceCodeProps}). Renders
      * supplied source text with BB's syntax highlighting, gutters, and live code
      * theme, and honours an active `experimental_sourceCodeRenderer`
@@ -2239,6 +2796,8 @@ interface PluginSdkApp {
     useComposerView(): ComposerView;
 }
 
+declare const experimental_Icon: react.ComponentType<ExperimentalIconProps>;
+declare const experimental_ProviderIcon: react.ComponentType<ExperimentalProviderIconProps>;
 declare const definePluginApp: (setup: PluginAppSetup) => PluginAppDefinition;
 declare const ThreadChat: react.ComponentType<ThreadChatProps>;
 declare const Markdown: react.ComponentType<MarkdownProps>;
@@ -2247,6 +2806,9 @@ declare const UrlLink: react.ComponentType<UrlLinkProps>;
 declare const experimental_NewThreadComposer: react.ComponentType<NewThreadComposerProps>;
 declare const experimental_ProviderModelPicker: react.ComponentType<ExperimentalProviderModelPickerProps>;
 declare const experimental_PermissionModePicker: react.ComponentType<ExperimentalPermissionModePickerProps>;
+declare const experimental_BranchPicker: react.ComponentType<BranchPickerProps>;
+declare const experimental_useBranches: (args: UseBranchesArgs) => BranchesState;
+declare const experimental_useCheckoutState: (args: UseCheckoutStateArgs) => CheckoutState;
 declare const experimental_SourceCode: react.ComponentType<SourceCodeProps>;
 declare const experimental_Diff: react.ComponentType<DiffProps>;
 declare const useRpc: <Contract extends PluginRpcContract = Readonly<Record<string, PluginRpcMethodContract<StandardSchemaV1<unknown, unknown>, StandardSchemaV1<unknown, unknown>>>>>() => PluginRpcClient<Contract>;
@@ -2256,7 +2818,7 @@ declare const useSettings: () => PluginSettingsState;
 declare const useBbContext: () => BbContext;
 declare const useBbNavigate: () => BbNavigate;
 declare const experimental_useAppPanel: () => ExperimentalAppPanel;
-declare const experimental_useFixedTabTarget: <Target extends JsonValue>(tab: ExperimentalPluginFixedTabReference<Target>) => ExperimentalFixedTabTargetState<Target> | null;
+declare const experimental_useFixedTabTarget: <Target extends JsonValue$1>(tab: ExperimentalPluginFixedTabReference<Target>) => ExperimentalFixedTabTargetState<Target> | null;
 declare const useComposer: () => PluginComposerApi;
 declare const useComposerView: () => ComposerView;
 declare const experimental_useSidebarThreads: () => PluginSidebarThreadsState;
@@ -2264,6 +2826,7 @@ declare const experimental_useSidebarThreadActions: () => PluginSidebarThreadAct
 declare const experimental_useSidebarThreadPullRequest: (threadId: string) => PluginSidebarThreadPullRequestState;
 declare const experimental_useSidebarThreadSplit: (threadId: string) => PluginSidebarThreadSplit;
 declare const experimental_useProviders: () => PluginProvidersState;
+declare const experimental_useCodeTheme: () => PluginCodeThemeState;
 
-export { Markdown, ThreadChat, UrlLink, definePluginApp, experimental_Diff, experimental_FileLink, experimental_NewThreadComposer, experimental_PermissionModePicker, experimental_ProviderModelPicker, experimental_SourceCode, experimental_useAppPanel, experimental_useFixedTabTarget, experimental_useProviders, experimental_useSidebarThreadActions, experimental_useSidebarThreadPullRequest, experimental_useSidebarThreadSplit, experimental_useSidebarThreads, useBbContext, useBbNavigate, useComposer, useComposerView, useRealtime, useRealtimeConnectionState, useRpc, useSettings };
-export type { BbContext, BbNavigate, CodeOverflowMode, ComposerCustomization, ComposerPlusMenuItem, ComposerRichTextSpec, ComposerStructuredDraft, ComposerView, DiffProps, DiffViewMode, ExperimentalAppPanel, ExperimentalAppPanelSurface, ExperimentalDiffFileContent, ExperimentalDiffFullFileContents, ExperimentalFileLinkProps, ExperimentalFileLocation, ExperimentalFileOpenOptions, ExperimentalFixedTabTargetContract, ExperimentalFixedTabTargetState, ExperimentalLiveFileTarget, ExperimentalOpenFixedTabOptions, ExperimentalPermissionModePickerProps, ExperimentalPluginFixedTabReference, ExperimentalProviderModelPickerProps, ExperimentalProviderModelPickerRouting, ExperimentalProviderModelPickerValue, JsonValue, MarkdownProps, NewThreadComposerProps, NewThreadRequest, PluginAppBuilder, PluginAppComposer, PluginAppContentScripts, PluginAppDefinition, PluginAppSetup, PluginAppSlots, PluginCommandPaletteActionContext, PluginCommandPaletteActionRegistration, PluginComposerApi, PluginComposerMention, PluginComposerScope, PluginComposerTextEffect, PluginComposerThreadRowStatus, PluginContentScriptContext, PluginContentScriptDisposer, PluginContentScriptRegistration, PluginDiffRendererProps, PluginDiffRendererRegistration, PluginFileOpenerProps, PluginFileOpenerRegistration, PluginFileOpenerSource, PluginFixedTabDeclaration, PluginFixedTabRegistration, PluginHomepageSectionProps, PluginHomepageSectionRegistration, PluginMessageActionContext, PluginMessageActionRegistration, PluginMessageDirectiveMessage, PluginMessageDirectiveOpenWorkspaceFile, PluginMessageDirectiveProps, PluginMessageDirectiveRegistration, PluginNavPanelProps, PluginNavPanelRegistration, PluginNewThreadPanelActionContext, PluginNewThreadPanelActionRegistration, PluginNewThreadPanelProps, PluginPanelActionOpenOptions, PluginPendingInteractionProps, PluginPendingInteractionRegistration, PluginPendingInteractionView, PluginProviderIconRegistration, PluginProvidersState, PluginRealtimeConnectionState, PluginRpcCallArgs, PluginRpcClient, PluginRpcContract, PluginRpcError, PluginRpcErrorCode, PluginRpcHandlers, PluginRpcIssuePathSegment, PluginRpcMethodContract, PluginRpcResult, PluginRpcValidationIssue, PluginSdkApp, PluginSettingsSectionProps, PluginSettingsSectionRegistration, PluginSettingsState, PluginSidebarFooterActionContext, PluginSidebarFooterActionProps, PluginSidebarFooterActionRegistration, PluginSidebarProject, PluginSidebarPullRequest, PluginSidebarSplitPane, PluginSidebarThread, PluginSidebarThreadActions, PluginSidebarThreadActivity, PluginSidebarThreadIndicator, PluginSidebarThreadPullRequestState, PluginSidebarThreadSplit, PluginSidebarThreadsState, PluginSidebarWorkspaceKind, PluginSourceCodeRendererProps, PluginSourceCodeRendererRegistration, PluginTargetedPanelActionOpenOptions, PluginThreadHeaderActionProps, PluginThreadHeaderActionRegistration, PluginThreadListProps, PluginThreadListRegistration, PluginThreadPanelActionContext, PluginThreadPanelActionRegistration, PluginThreadPanelProps, PluginTimelineRendererProps, PluginTimelineRendererRegistration, PluginTimelineRendererRow, PluginTimelineRowPresentation, PluginTimelineRowStatus, SourceCodeLineRange, SourceCodeProps, StandardSchemaV1, StandardSchemaV1InferInput, StandardSchemaV1InferOutput, StandardSchemaV1Issue, StandardSchemaV1Result, ThreadChatMessageAction, ThreadChatMessageReference, ThreadChatProps, UrlLinkProps };
+export { Markdown, ThreadChat, UrlLink, definePluginApp, experimental_BranchPicker, experimental_Diff, experimental_FileLink, experimental_Icon, experimental_NewThreadComposer, experimental_PermissionModePicker, experimental_ProviderIcon, experimental_ProviderModelPicker, experimental_SourceCode, experimental_useAppPanel, experimental_useBranches, experimental_useCheckoutState, experimental_useCodeTheme, experimental_useFixedTabTarget, experimental_useProviders, experimental_useSidebarThreadActions, experimental_useSidebarThreadPullRequest, experimental_useSidebarThreadSplit, experimental_useSidebarThreads, useBbContext, useBbNavigate, useComposer, useComposerView, useRealtime, useRealtimeConnectionState, useRpc, useSettings };
+export type { BbContext, BbNavigate, BranchPickerProps, BranchesState, CheckoutState, CodeOverflowMode, ComposerCustomization, ComposerPlusMenuItem, ComposerRichTextSpec, ComposerStructuredDraft, ComposerView, DiffProps, DiffViewMode, ExperimentalAppIcons, ExperimentalAppOverlayProps, ExperimentalAppOverlayRegistration, ExperimentalAppPanel, ExperimentalAppPanelSurface, ExperimentalComposerSubmitOptions, ExperimentalDiffFileContent, ExperimentalDiffFullFileContents, ExperimentalFileLinkProps, ExperimentalFileLocation, ExperimentalFileOpenOptions, ExperimentalFixedTabTargetContract, ExperimentalFixedTabTargetState, ExperimentalIconProps, ExperimentalIconRegistration, ExperimentalLiveFileTarget, ExperimentalOpenFixedTabOptions, ExperimentalPermissionModePickerProps, ExperimentalPluginFixedTabReference, ExperimentalProviderIconProps, ExperimentalProviderModelPickerProps, ExperimentalProviderModelPickerRouting, ExperimentalProviderModelPickerValue, ExperimentalSidebarFooter, ExperimentalSidebarFooterActionContext, ExperimentalSidebarFooterActionRegistration, ExperimentalSidebarFooterDisclosureController, ExperimentalSidebarFooterDisclosureProps, ExperimentalSidebarFooterDisclosureRegistration, ExperimentalSidebarFooterItemBase, ExperimentalSidebarFooterItemRegistration, ExperimentalSidebarNavigationAction, ExperimentalSidebarNavigationActivationOptions, ExperimentalSidebarNavigationIcon, ExperimentalSidebarNavigationItem, ExperimentalSidebarNavigationProps, ExperimentalSidebarNavigationRegistration, ExperimentalSidebarNavigationShortcut, JsonValue$1 as JsonValue, MarkdownProps, NewThreadComposerProps, NewThreadRequest, PluginAppBuilder, PluginAppComposer, PluginAppContentScripts, PluginAppDefinition, PluginAppSetup, PluginAppSlots, PluginCodeThemeData, PluginCodeThemeState, PluginCodeThemeTokenRule, PluginCommandPaletteActionContext, PluginCommandPaletteActionRegistration, PluginComposerApi, PluginComposerMention, PluginComposerScope, PluginComposerTextEffect, PluginComposerThreadRowStatus, PluginContentScriptContext, PluginContentScriptDisposer, PluginContentScriptRegistration, PluginDiffRendererProps, PluginDiffRendererRegistration, PluginEnvironmentProviderInputsChange, PluginEnvironmentProviderInputsProps, PluginEnvironmentProviderInputsRegistration, PluginFileOpenerProps, PluginFileOpenerRegistration, PluginFileOpenerSource, PluginFixedTabDeclaration, PluginFixedTabRegistration, PluginHomepageSectionProps, PluginHomepageSectionRegistration, PluginMachineProviderInputsChange, PluginMachineProviderInputsProps, PluginMachineProviderInputsRegistration, PluginMessageActionContext, PluginMessageActionRegistration, PluginMessageDirectiveMessage, PluginMessageDirectiveOpenWorkspaceFile, PluginMessageDirectiveProps, PluginMessageDirectiveRegistration, PluginNavPanelProps, PluginNavPanelRegistration, PluginNewThreadPanelActionContext, PluginNewThreadPanelActionRegistration, PluginNewThreadPanelProps, PluginPanelActionOpenOptions, PluginPendingInteractionProps, PluginPendingInteractionRegistration, PluginPendingInteractionView, PluginProviderIconRegistration, PluginProvidersState, PluginRealtimeConnectionState, PluginRpcCallArgs, PluginRpcClient, PluginRpcContract, PluginRpcError, PluginRpcErrorCode, PluginRpcHandlers, PluginRpcIssuePathSegment, PluginRpcMethodContract, PluginRpcResult, PluginRpcValidationIssue, PluginSdkApp, PluginSettingsSectionProps, PluginSettingsSectionRegistration, PluginSettingsState, PluginSidebarFooterActionContext, PluginSidebarFooterActionProps, PluginSidebarFooterActionRegistration, PluginSidebarProject, PluginSidebarPullRequest, PluginSidebarSplitPane, PluginSidebarThread, PluginSidebarThreadActions, PluginSidebarThreadActivity, PluginSidebarThreadIndicator, PluginSidebarThreadPullRequestState, PluginSidebarThreadSplit, PluginSidebarThreadsState, PluginSourceCodeRendererProps, PluginSourceCodeRendererRegistration, PluginTargetedPanelActionOpenOptions, PluginThreadHeaderActionProps, PluginThreadHeaderActionRegistration, PluginThreadListProps, PluginThreadListRegistration, PluginThreadPanelActionContext, PluginThreadPanelActionRegistration, PluginThreadPanelProps, PluginTimelineRendererProps, PluginTimelineRendererRegistration, PluginTimelineRendererRow, PluginTimelineRowPresentation, PluginTimelineRowStatus, ReadonlyJsonValue, SourceCodeLineRange, SourceCodeProps, StandardSchemaV1, StandardSchemaV1InferInput, StandardSchemaV1InferOutput, StandardSchemaV1Issue, StandardSchemaV1Result, ThreadChatMessageAction, ThreadChatMessageReference, ThreadChatProps, UrlLinkProps, UseBranchesArgs, UseCheckoutStateArgs };

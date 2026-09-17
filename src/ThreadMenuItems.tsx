@@ -4,11 +4,13 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
+  useRpc,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { cn } from "./lib/utils";
 import { copyText, threadUrl } from "./thread-link";
 import { useLinkOrigins } from "./useLinkOrigins";
+import type { t3sidebarRpcContract } from "./server";
 
 export type ThreadMenuSurface = "context" | "dropdown";
 
@@ -26,6 +28,7 @@ export function ThreadMenuItems({
   onRename: () => void;
 }) {
   const actions = useSidebarThreadActions();
+  const rpc = useRpc<typeof t3sidebarRpcContract>();
   const { projects } = useSidebarThreads();
   const project = projects.find((entry) => entry.id === thread.projectId);
   const { localOrigin, cloudOrigin, refresh } = useLinkOrigins();
@@ -89,9 +92,22 @@ export function ThreadMenuItems({
         Rename
       </Item>
       <Separator surface={surface} />
-      <Item surface={surface} onSelect={() => actions.archive(thread.id)}>
-        Archive
-      </Item>
+      {thread.isArchived ? (
+        <Item
+          surface={surface}
+          onSelect={() => {
+            void rpc
+              .call("unarchive", { threadId: thread.id })
+              .catch(() => undefined);
+          }}
+        >
+          Unarchive
+        </Item>
+      ) : (
+        <Item surface={surface} onSelect={() => actions.archive(thread.id)}>
+          Archive
+        </Item>
+      )}
       <Item
         surface={surface}
         destructive
@@ -121,13 +137,13 @@ function Item({
   );
   if (surface === "context") {
     return (
-      <ContextMenu.Item onSelect={onSelect} className={className}>
+      <ContextMenu.Item className={className} onSelect={onSelect}>
         {children}
       </ContextMenu.Item>
     );
   }
   return (
-    <DropdownMenu.Item onSelect={onSelect} className={className}>
+    <DropdownMenu.Item className={className} onSelect={onSelect}>
       {children}
     </DropdownMenu.Item>
   );
