@@ -13,6 +13,7 @@ Fork of [SawyerHood/bb-plugin-t3sidebar](https://github.com/SawyerHood/bb-plugin
 - **Unread filter** — Click the bell to filter unread threads (click again for All); badge shows attention count
 - **Archived threads** — Archive icon next to the bell swaps the sidebar list to archived threads (click again for the live inbox). Status, provider, and Labels Pro filters (e.g. Hide · automation) apply the same way. Right-click → Unarchive restores one.
 - **Mark all read** — Check button next to the bell marks every attention thread read (clears blue dots and the bell badge); respects the active label filter
+- **Provider limits** — Codex, Anthropic, and Cursor icons in the sidebar top row, between the sidebar toggle and the back/forward arrows. Each icon is followed by the percent still left. Anthropic shows one percent per window (session, weekly, Fable). Hover a figure for the reset time.
 
 Desktop OS notifications and the Dock / app-icon badge live in
 [Notifications Pro](https://github.com/kr3t3n/bb-plugin-notifications-pro), not here.

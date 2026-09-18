@@ -13,6 +13,11 @@ import {
   type ArchivedThreadRow,
 } from "./archived-contract";
 import { resolveCloudOrigin } from "./resolve-cloud-origin";
+import {
+  normalizeProviderLimits,
+  providerLimitsResultSchema,
+  type ProviderLimitsResult,
+} from "./provider-limits";
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -157,6 +162,11 @@ export const t3sidebarRpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean() }),
   },
   unsnooze: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
+  /** Codex, Anthropic, and Cursor quota still left. No account email. */
+  providerLimits: {
+    input: z.object({}),
+    output: providerLimitsResultSchema,
+  },
 });
 
 /** Channel the frontend re-reads on. */
@@ -165,6 +175,12 @@ export const LIFECYCLE_CHANNEL = "lifecycle";
 export default function plugin(bb: BbPluginApi) {
   const db = bb.storage.database();
   bb.storage.migrate(db, migrations);
+  const usageCache: { expiresAt: number; value: ProviderLimitsResult } = {
+    expiresAt: 0,
+    value: providerLimitsResultSchema.parse({
+      providers: normalizeProviderLimits(null),
+    }),
+  };
 
   const readAll = (): StoredLifecycleRow[] =>
     (
@@ -278,6 +294,28 @@ export default function plugin(bb: BbPluginApi) {
     async unsnooze({ threadId }) {
       clear(threadId);
       return { ok: true };
+    },
+    async providerLimits() {
+      const now = Date.now();
+      if (now < usageCache.expiresAt) return usageCache.value;
+      try {
+        const raw = await bb.sdk.system.usageLimits();
+        const value = providerLimitsResultSchema.parse({
+          providers: normalizeProviderLimits(raw),
+        });
+        usageCache.expiresAt = now + 45_000;
+        usageCache.value = value;
+        return value;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown";
+        bb.log.warn(`provider usage read failed: ${message}`);
+        const value = providerLimitsResultSchema.parse({
+          providers: normalizeProviderLimits(null),
+        });
+        usageCache.expiresAt = now + 15_000;
+        usageCache.value = value;
+        return value;
+      }
     },
   });
 

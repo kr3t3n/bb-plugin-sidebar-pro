@@ -9,12 +9,20 @@ import { ThreadInbox } from "./src/ThreadInbox";
 import { ParentChip } from "./src/ParentChip";
 import { SubagentsChip } from "./src/SubagentsChip";
 import { mountSearchSlot } from "./src/search-slot";
+import { mountUsageSlot } from "./src/usage-slot";
 
 export default definePluginApp((app) => {
   app.contentScripts.register({
     id: "new-thread-search-slot",
     mount({ signal }) {
       mountSearchSlot(signal);
+    },
+  });
+
+  app.contentScripts.register({
+    id: "provider-limit-slot",
+    mount({ signal, pluginId }) {
+      mountUsageSlot(signal, pluginId);
     },
   });
 
