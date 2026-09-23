@@ -11,6 +11,12 @@ export const USAGE_SLOT_EVENT = "sidebar-pro-usage-slot";
 
 const STYLE_ID = "sidebar-pro-usage-slot-style";
 const POLL_MS = 60_000;
+const USAGE_PAD_VAR = "--sidebar-pro-usage-pad";
+const USAGE_PAD_FALLBACK = "calc(2.25rem + 1ch)";
+const USAGE_PAD_GAP_PX = 8;
+
+/** bb's sidebar toggle. The macOS app shifts it to clear the traffic lights. */
+export const SIDEBAR_TOGGLE_SELECTOR = '[aria-label^="Toggle sidebar"]';
 
 /**
  * The host row is `justify-end` and holds only the back and forward buttons.
@@ -26,7 +32,7 @@ const SLOT_CSS = `
   min-width: max-content;
   max-width: calc(100% - 4.75rem);
   margin-right: auto;
-  padding-left: calc(2.25rem + 1ch);
+  padding-left: var(${USAGE_PAD_VAR}, ${USAGE_PAD_FALLBACK});
   color: var(--foreground);
   font: 600 12px/1 ui-sans-serif, system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
@@ -78,6 +84,41 @@ export function ensureUsageSlot(root: ParentNode = document): HTMLElement | null
   return slot;
 }
 
+/**
+ * How far the figures must start so they clear the sidebar toggle.
+ * Returns null when the toggle is absent or does not cross this slot.
+ */
+export function sidebarToggleClearancePx(
+  slot: HTMLElement,
+  root: ParentNode = document,
+): number | null {
+  const slotRect = slot.getBoundingClientRect();
+  let clearance = 0;
+  let hit = false;
+  for (const button of root.querySelectorAll<HTMLElement>(SIDEBAR_TOGGLE_SELECTOR)) {
+    const buttonRect = button.getBoundingClientRect();
+    if (buttonRect.width <= 0 || buttonRect.height <= 0) continue;
+    const overlapsY = buttonRect.bottom > slotRect.top && buttonRect.top < slotRect.bottom;
+    if (!overlapsY) continue;
+    const overlap = buttonRect.right - slotRect.left + USAGE_PAD_GAP_PX;
+    if (overlap > 0) {
+      hit = true;
+      clearance = Math.max(clearance, overlap);
+    }
+  }
+  return hit ? Math.ceil(clearance) : null;
+}
+
+/** Keep the browser padding, and grow it when the toggle sits further right. */
+export function syncUsageSlotPadding(slot: HTMLElement, root: ParentNode = document): void {
+  const clearance = sidebarToggleClearancePx(slot, root);
+  if (clearance === null) {
+    slot.style.removeProperty(USAGE_PAD_VAR);
+    return;
+  }
+  slot.style.setProperty(USAGE_PAD_VAR, `max(${USAGE_PAD_FALLBACK}, ${clearance}px)`);
+}
+
 export async function fetchProviderLimits(
   pluginId: string,
   signal?: AbortSignal,
@@ -114,7 +155,10 @@ export function mountUsageSlot(signal: AbortSignal, pluginId: string): void {
     if (signal.aborted) return;
     latest = [...providers];
     const slot = ensureUsageSlot(doc);
-    if (slot) renderUsageMeters(slot, latest);
+    if (slot) {
+      renderUsageMeters(slot, latest);
+      syncUsageSlotPadding(slot);
+    }
   };
 
   // The host rebuilds the row. Refill only an empty slot so our own writes
@@ -122,7 +166,9 @@ export function mountUsageSlot(signal: AbortSignal, pluginId: string): void {
   const refill = () => {
     if (signal.aborted) return;
     const slot = ensureUsageSlot(doc);
-    if (slot && slot.childElementCount === 0) renderUsageMeters(slot, latest);
+    if (slot === null) return;
+    if (slot.childElementCount === 0) renderUsageMeters(slot, latest);
+    syncUsageSlotPadding(slot);
   };
 
   const refresh = () => {
@@ -152,10 +198,14 @@ export function mountUsageSlot(signal: AbortSignal, pluginId: string): void {
 
   const observer = new MutationObserver(schedule);
   observer.observe(doc.documentElement, { childList: true, subtree: true });
+  window.addEventListener("resize", refill);
+  const frame = window.requestAnimationFrame(refill);
 
   const onAbort = () => {
     if (timer !== null) window.clearTimeout(timer);
     window.clearInterval(poll);
+    window.cancelAnimationFrame(frame);
+    window.removeEventListener("resize", refill);
     observer.disconnect();
     doc.getElementById(STYLE_ID)?.remove();
     doc.querySelector(`[${USAGE_SLOT_ATTR}]`)?.remove();
