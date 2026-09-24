@@ -54,8 +54,21 @@ bb plugin install /home/bb/plugins/bb-plugin-sidebar-pro --yes
 bb plugin reload sidebar-pro
 ```
 
-Turn it on in **Settings → Appearance → Sidebar**. Stock T3 Sidebar can stay
-installed; pick **Sidebar Pro** when you want the extra controls.
+From bb 0.43 the sidebar stays on the built-in thread list until something
+selects Sidebar Pro. On startup this plugin sets
+`sidebar.threadListProvider` to `sidebar-pro/inbox` when the saved value is
+still that built-in default (`thread-list/thread-list`, or the older
+`__automatic__` / `__builtin__` values). A list from another plugin stays
+selected.
+
+You can also select it by hand:
+
+```sh
+bb settings ui set sidebar.threadListProvider sidebar-pro/inbox
+```
+
+The same choice is in **Settings → Appearance → Sidebar**. Stock T3 Sidebar
+can stay installed.
 
 The plugin still replaces only the scrolling list. bb keeps New thread, plugin
 nav, and footer. Thread search is a Sidebar Pro control docked to the right of

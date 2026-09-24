@@ -5,6 +5,7 @@
 // HOST_DAEMON_PROTOCOL_VERSION bump for something only this sidebar
 // understands. Here, uninstalling the plugin removes its state with it.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { claimBuiltinThreadList } from "./claim-thread-list";
 import { z } from "zod";
 import {
   ARCHIVED_CHANNEL,
@@ -173,6 +174,26 @@ export const t3sidebarRpcContract = defineRpcContract({
 export const LIFECYCLE_CHANNEL = "lifecycle";
 
 export default function plugin(bb: BbPluginApi) {
+  void claimBuiltinThreadList({
+    pluginId: bb.pluginId,
+    log: bb.log,
+    async list() {
+      const listed = await bb.sdk.system.uiPreferences.list();
+      const entry = listed.preferences["sidebar.threadListProvider"];
+      return entry ?? null;
+    },
+    async set(revision, value) {
+      await bb.sdk.system.uiPreferences.set({
+        key: "sidebar.threadListProvider",
+        expectedRevision: revision,
+        value,
+      });
+    },
+  }).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "unknown";
+    bb.log.warn(`thread list select failed: ${message}`);
+  });
+
   const db = bb.storage.database();
   bb.storage.migrate(db, migrations);
   const usageCache: { expiresAt: number; value: ProviderLimitsResult } = {
