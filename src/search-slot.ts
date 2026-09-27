@@ -25,6 +25,13 @@ ${NEW_THREAD_ITEM_SELECTOR}[${SEARCH_OPEN_ATTR}="true"] > button[aria-label^="Ne
   align-items: center;
   flex: 0 0 auto;
   min-width: 0;
+  /* Clear the host's absolutely positioned hover "..." at the row's right edge. */
+  margin-right: 1.75rem;
+}
+@media (width < 48rem) and (pointer: coarse) {
+  [${SEARCH_SLOT_ATTR}] {
+    margin-right: 2.25rem;
+  }
 }
 ${NEW_THREAD_ITEM_SELECTOR}[${SEARCH_OPEN_ATTR}="true"] [${SEARCH_SLOT_ATTR}] {
   flex: 1 1 auto;
