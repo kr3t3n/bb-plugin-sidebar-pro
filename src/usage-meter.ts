@@ -1,6 +1,7 @@
 import {
   limitTone,
   providerLimitLabel,
+  windowDetail,
   type ProviderLimit,
   type ProviderLimitId,
 } from "./provider-limits";
@@ -35,19 +36,23 @@ function markSvg(providerId: ProviderLimitId): SVGSVGElement {
   return svg;
 }
 
-/** Percent still left. One figure per window, next to the provider icon. */
+export const USAGE_CARD_HINT = "Click to open Provider usage.";
+
+/**
+ * Percent still left. One figure per window, next to the provider icon.
+ * Each provider is a button: click opens the usage screen, hover shows the card.
+ */
 export function renderUsageMeters(
   root: HTMLElement,
   providers: readonly ProviderLimit[],
 ): void {
   root.replaceChildren();
   for (const provider of providers) {
-    const item = document.createElement("span");
+    const item = document.createElement("button");
+    item.type = "button";
     item.className = "meter";
     item.dataset.providerId = provider.providerId;
-    const label = providerLimitLabel(provider);
-    item.title = label;
-    item.setAttribute("aria-label", label);
+    item.setAttribute("aria-label", `${providerLimitLabel(provider)} ${USAGE_CARD_HINT}`);
     item.append(markSvg(provider.providerId));
 
     const figures = document.createElement("span");
@@ -64,4 +69,55 @@ export function renderUsageMeters(
     item.append(figures);
     root.append(item);
   }
+}
+
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+/** Hover card: plan, then one row per window with a bar, use, and reset time. */
+export function renderUsageCard(
+  root: HTMLElement,
+  provider: ProviderLimit,
+  now: number = Date.now(),
+): void {
+  root.replaceChildren();
+
+  const head = el("div", "card-head");
+  head.append(markSvg(provider.providerId), el("span", "card-title", provider.label));
+  if (provider.planLabel) head.append(el("span", "card-plan", provider.planLabel));
+  root.append(head);
+
+  if (provider.status !== "ok" || provider.windows.length === 0) {
+    root.append(el("div", "card-empty", "Usage is unavailable. Sign in to the provider to see its limits."));
+  }
+
+  for (const window of provider.windows) {
+    const remaining = window.remainingPercent;
+    const tone = limitTone(remaining);
+    const row = el("div", "card-row");
+
+    const top = el("div", "card-row-top");
+    top.append(
+      el("span", "card-window", window.label),
+      el("span", `pct pct-${tone}`, remaining === null ? "Unknown" : `${remaining}% left`),
+    );
+
+    const bar = el("div", "card-bar");
+    const fill = el("span", `card-fill fill-${tone}`);
+    fill.style.width = `${remaining ?? 0}%`;
+    bar.append(fill);
+
+    row.append(top, bar, el("div", "card-detail", windowDetail(window, now)));
+    root.append(row);
+  }
+
+  root.append(el("div", "card-hint", USAGE_CARD_HINT));
 }

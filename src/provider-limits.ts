@@ -24,6 +24,8 @@ export const providerLimitSchema = z.object({
   providerId: providerLimitIdSchema,
   label: z.string(),
   status: z.enum(["ok", "unavailable"]),
+  /** Plan name, for example "Max (5x)". Never the account email. */
+  planLabel: z.string().max(80).nullable().optional(),
   windows: z.array(providerLimitWindowSchema).max(8),
 });
 
@@ -92,6 +94,12 @@ export function limitTone(remaining: number | null): LimitTone {
   return "ok";
 }
 
+function readPlanLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const label = value.trim().slice(0, 80);
+  return label.length > 0 ? label : null;
+}
+
 function readWindows(value: unknown): ProviderLimitWindow[] {
   if (!Array.isArray(value)) return [];
   const windows: ProviderLimitWindow[] = [];
@@ -115,7 +123,7 @@ function readWindows(value: unknown): ProviderLimitWindow[] {
 
 /**
  * Map `bb.sdk.system.usageLimits()` into the three sidebar providers.
- * Drops account email and plan text. Always returns Codex, Anthropic, Cursor.
+ * Drops account email. Always returns Codex, Anthropic, Cursor.
  */
 export function normalizeProviderLimits(raw: unknown): ProviderLimit[] {
   const record =
@@ -133,16 +141,14 @@ export function normalizeProviderLimits(raw: unknown): ProviderLimit[] {
         windows: [],
       };
     }
-    const status = (block as Record<string, unknown>).status;
-    const windows =
-      status === "ok"
-        ? readWindows((block as Record<string, unknown>).windows)
-        : [];
+    const row = block as Record<string, unknown>;
+    const windows = row.status === "ok" ? readWindows(row.windows) : [];
     const usable = windows.some((window) => window.remainingPercent !== null);
     return {
       providerId: provider.id,
       label: provider.label,
       status: usable ? ("ok" as const) : ("unavailable" as const),
+      planLabel: readPlanLabel(row.planLabel),
       windows: usable ? windows : [],
     };
   });
@@ -157,6 +163,36 @@ export function formatReset(iso: string | null): string | null {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${day} ${month} ${hours}:${minutes}`;
+}
+
+/** Time until the reset, for example "in 2h 10m". Null when unknown or past. */
+export function formatResetIn(iso: string | null, now: number = Date.now()): string | null {
+  if (!iso) return null;
+  const at = new Date(iso).getTime();
+  if (Number.isNaN(at)) return null;
+  const minutes = Math.ceil((at - now) / 60_000);
+  if (minutes <= 0) return null;
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest === 0 ? `in ${hours}h` : `in ${hours}h ${rest}m`;
+  }
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours === 0 ? `in ${days}d` : `in ${days}d ${restHours}h`;
+}
+
+/** Second line of one window in the hover card. */
+export function windowDetail(window: ProviderLimitWindow, now: number = Date.now()): string {
+  const used = window.usedPercent === null ? null : Math.round(window.usedPercent);
+  const usedText = used === null ? "Use is unknown" : `${used}% used`;
+  const reset = formatReset(window.resetsAt);
+  if (reset === null) return `${usedText}. Reset time is not reported.`;
+  const resetIn = formatResetIn(window.resetsAt, now);
+  return resetIn === null
+    ? `${usedText}. Resets ${reset}.`
+    : `${usedText}. Resets ${resetIn} (${reset}).`;
 }
 
 /** Hover and screen-reader text. One sentence per window. */
