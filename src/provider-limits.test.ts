@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   formatReset,
+  formatResetIn,
   limitTone,
   normalizeProviderLimits,
   providerLimitLabel,
   remainingPercent,
   signalLevel,
+  windowDetail,
 } from "./provider-limits";
 
 describe("remainingPercent", () => {
@@ -47,6 +49,7 @@ describe("normalizeProviderLimits", () => {
       },
       "claude-code": {
         status: "ok",
+        planLabel: "Max (5x)",
         windows: [
           { label: "Current session", usedPercent: 100, resetsAt: null },
           { label: "Weekly limit", usedPercent: 15, resetsAt: null },
@@ -65,6 +68,8 @@ describe("normalizeProviderLimits", () => {
     expect(providers[1]?.windows.map((window) => window.remainingPercent)).toEqual([
       0, 85,
     ]);
+    expect(providers[1]?.planLabel).toBe("Max (5x)");
+    expect(providers[0]?.planLabel).toBeNull();
     expect(providers[2]?.status).toBe("unavailable");
     expect(JSON.stringify(providers)).not.toContain("secret@example.com");
   });
@@ -89,5 +94,45 @@ describe("providerLimitLabel", () => {
     expect(label).toContain("Codex.");
     expect(label).toContain("Weekly limit: 11% left.");
     expect(label).toContain(`Resets ${formatReset(iso)}.`);
+  });
+});
+
+describe("formatResetIn", () => {
+  const now = Date.parse("2026-09-27T17:00:00.000Z");
+
+  it("states the time left until the reset", () => {
+    expect(formatResetIn("2026-09-27T17:12:00.000Z", now)).toBe("in 12m");
+    expect(formatResetIn("2026-09-27T19:20:00.000Z", now)).toBe("in 2h 20m");
+    expect(formatResetIn("2026-09-27T20:00:00.000Z", now)).toBe("in 3h");
+    expect(formatResetIn("2026-10-02T04:00:00.000Z", now)).toBe("in 4d 11h");
+  });
+
+  it("returns null for a missing, bad, or past time", () => {
+    expect(formatResetIn(null, now)).toBeNull();
+    expect(formatResetIn("not a date", now)).toBeNull();
+    expect(formatResetIn("2026-09-27T16:00:00.000Z", now)).toBeNull();
+  });
+});
+
+describe("windowDetail", () => {
+  const now = Date.parse("2026-09-27T17:00:00.000Z");
+
+  it("states the use and the reset time", () => {
+    const iso = "2026-09-27T19:20:00.000Z";
+    expect(
+      windowDetail(
+        { label: "Current session", usedPercent: 70, remainingPercent: 30, resetsAt: iso },
+        now,
+      ),
+    ).toBe(`70% used. Resets in 2h 20m (${formatReset(iso)}).`);
+  });
+
+  it("says so when the reset time is not reported", () => {
+    expect(
+      windowDetail(
+        { label: "Plan usage", usedPercent: 57, remainingPercent: 43, resetsAt: null },
+        now,
+      ),
+    ).toBe("57% used. Reset time is not reported.");
   });
 });

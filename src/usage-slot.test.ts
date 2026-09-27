@@ -2,8 +2,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   SIDEBAR_TOGGLE_SELECTOR,
+  USAGE_SCREEN_PATH,
   USAGE_SLOT_ATTR,
   ensureUsageSlot,
+  openUsageScreen,
   sidebarToggleClearancePx,
   syncUsageSlotPadding,
 } from "./usage-slot";
@@ -89,5 +91,35 @@ describe("sidebar toggle clearance", () => {
     expect(sidebarToggleClearancePx(slot!)).toBeNull();
     syncUsageSlotPadding(slot!);
     expect(slot?.style.getPropertyValue("--sidebar-pro-usage-pad")).toBe("");
+  });
+});
+
+describe("openUsageScreen", () => {
+  afterEach(() => {
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("pushes the Provider usage path and tells the router", () => {
+    window.history.replaceState({ usr: null, key: "a", idx: 3 }, "", "/threads/x");
+    const seen: string[] = [];
+    const onPop = () => seen.push(window.location.pathname);
+    window.addEventListener("popstate", onPop);
+    openUsageScreen();
+    window.removeEventListener("popstate", onPop);
+
+    expect(window.location.pathname).toBe(USAGE_SCREEN_PATH);
+    expect((window.history.state as { idx: number }).idx).toBe(4);
+    expect(seen).toEqual([USAGE_SCREEN_PATH]);
+  });
+
+  it("does nothing when the screen is already open", () => {
+    window.history.replaceState({ usr: null, key: "a", idx: 1 }, "", USAGE_SCREEN_PATH);
+    let pops = 0;
+    const onPop = () => pops++;
+    window.addEventListener("popstate", onPop);
+    openUsageScreen();
+    window.removeEventListener("popstate", onPop);
+    expect(pops).toBe(0);
+    expect((window.history.state as { idx: number }).idx).toBe(1);
   });
 });
