@@ -46,7 +46,7 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
-    "bb-app": "0.37.0",
+    "bb-app": "0.44.0",
     "better-sqlite3": "12.10.0",
     "jsdom": "^29.0.1",
     "react": "^19.0.0",
