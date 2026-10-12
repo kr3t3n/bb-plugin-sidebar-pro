@@ -623,13 +623,30 @@ describe("row context menu", () => {
     ]);
   });
 
+  it("mounts the overflow menu only once the pointer reaches the row", () => {
+    render([thread({ id: "thr_lazy", title: "Lazy menu" })]);
+    const before = screen.getByRole("button", { name: "Thread actions" });
+    expect(before.getAttribute("aria-haspopup")).toBeNull();
+    fireEvent.pointerEnter(screen.getByRole("listitem"));
+    const after = screen.getByRole("button", { name: "Thread actions" });
+    expect(after.getAttribute("aria-haspopup")).toBe("menu");
+  });
+
   it("offers the same actions from the row overflow menu", async () => {
     render([thread({ id: "thr_menu", title: "Overflow me" })]);
+    // The "…" menu mounts when the pointer first reaches the row.
+    fireEvent.pointerEnter(screen.getByRole("listitem"));
     const triggers = await screen.findAllByRole("button", {
       name: "Thread actions",
     });
-    // Radix dropdown opens on pointerdown, not click.
-    fireEvent.pointerDown(triggers[0]!, { button: 0, ctrl: 0 });
+    // Radix dropdown opens on pointerdown, not click. A mouse pointer: any
+    // other type starts the right-click menu's touch long-press instead.
+    fireEvent.pointerDown(triggers[0]!, {
+      button: 0,
+      ctrlKey: false,
+      pointerType: "mouse",
+    });
+    expect(triggers[0]!.getAttribute("aria-expanded")).toBe("true");
     const menu = await screen.findByRole("menu", { name: "Thread actions" });
     expect(
       within(menu)

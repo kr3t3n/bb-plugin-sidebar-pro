@@ -20,7 +20,10 @@ describe("sameSidebarThread", () => {
 
   it.each([
     ["a top-level field", { isUnread: true }],
-    ["a nested activity count", { activity: { workflows: 1, backgroundAgents: 0 } }],
+    [
+      "a nested activity count",
+      { activity: { workflows: 1, backgroundAgents: 0 } },
+    ],
     ["the branch", { environment: { id: "env", branchName: "feature" } }],
     ["a nested object that appears", { host: { id: "h", name: "mac" } }],
   ])("sees a change in %s", (_name, patch) => {

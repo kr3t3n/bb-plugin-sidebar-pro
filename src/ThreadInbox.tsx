@@ -310,6 +310,17 @@ export function ThreadInbox({
       : (projectNameById.get(scope) ?? "All projects");
 
   const density: Density = preference.density;
+  // Changes when a shelf appears or disappears above a long list, so that list
+  // reads its offset in the scroll container again.
+  const shelfLayoutKey = [
+    showArchived,
+    pinned.length > 0,
+    inbox.length > 0,
+    snoozed.length > 0,
+    showSnoozed,
+    settled.length > 0,
+    density,
+  ].join("|");
 
   const labelsByThread = useMemo(
     () =>
@@ -529,6 +540,7 @@ export function ThreadInbox({
                     items={pinned.concat(inbox)}
                     rowHeight={ROW_HEIGHT[density]}
                     scrollRef={scrollRef}
+                    layoutKey={shelfLayoutKey}
                     renderRow={(thread, placement) => (
                       <ThreadCard
                         key={thread.id}
@@ -564,6 +576,7 @@ export function ThreadInbox({
                           items={rows}
                           rowHeight={ROW_HEIGHT[density]}
                           scrollRef={scrollRef}
+                          layoutKey={shelfLayoutKey}
                           renderRow={(thread, placement) => (
                             <ThreadCard
                               key={thread.id}
@@ -596,6 +609,7 @@ export function ThreadInbox({
                     lifecycle={lifecycle}
                     onNavigate={handleNavigate}
                     scrollRef={scrollRef}
+                    layoutKey={shelfLayoutKey}
                   />
                   <ParkedShelf
                     label="Settled"
@@ -607,6 +621,7 @@ export function ThreadInbox({
                     lifecycle={lifecycle}
                     onNavigate={handleNavigate}
                     scrollRef={scrollRef}
+                    layoutKey={shelfLayoutKey}
                   />
                 </>
               )}
@@ -815,6 +830,7 @@ function ParkedShelf({
   lifecycle,
   onNavigate,
   scrollRef,
+  layoutKey,
 }: {
   label: string;
   threads: readonly PluginSidebarThread[];
@@ -825,6 +841,7 @@ function ParkedShelf({
   lifecycle: ReturnType<typeof useLifecycle>;
   onNavigate: () => void;
   scrollRef: React.RefObject<HTMLElement | null>;
+  layoutKey: string;
 }) {
   if (threads.length === 0) return null;
   return (
@@ -854,6 +871,7 @@ function ParkedShelf({
           items={threads}
           rowHeight={ROW_HEIGHT.slim}
           scrollRef={scrollRef}
+          layoutKey={layoutKey}
           renderRow={(thread, placement) => (
             <SlimRow
               key={thread.id}

@@ -86,11 +86,13 @@ export const ThreadCard = memo(function ThreadCard({
 }: ThreadCardProps) {
   const actions = useSidebarThreadActions();
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
-  // Opt-in per row: this costs a git-host lookup, and threads sharing a
-  // worktree share one.
-  const { pullRequest } = useSidebarThreadPullRequest(thread.id);
   const compact = density === "compact";
   const [isRenaming, setIsRenaming] = useState(false);
+  // The "…" menu mounts when the pointer or focus first reaches the row. Rows
+  // that scroll past never pay for it. The right-click menu stays mounted:
+  // it wraps the row, and adding it later would remount the row mid-click.
+  const [overflowReady, setOverflowReady] = useState(false);
+  const readyOverflow = () => setOverflowReady(true);
   const title = threadDisplayTitle(thread);
 
   const finishRename = (next: string) => {
@@ -100,7 +102,12 @@ export const ThreadCard = memo(function ThreadCard({
 
   return (
     <RowContextMenu thread={thread} onRename={() => setIsRenaming(true)}>
-      <li className="list-none" {...placementProps(placement)}>
+      <li
+        className="list-none"
+        {...placementProps(placement)}
+        onPointerEnter={readyOverflow}
+        onFocus={readyOverflow}
+      >
         <div
           className={cn(
             "group/card relative rounded-md px-2.5 transition-colors",
@@ -171,10 +178,14 @@ export const ThreadCard = memo(function ThreadCard({
                     />
                   </span>
                 ) : null}
-                <RowOverflowMenu
-                  thread={thread}
-                  onRename={() => setIsRenaming(true)}
-                />
+                {overflowReady ? (
+                  <RowOverflowMenu
+                    thread={thread}
+                    onRename={() => setIsRenaming(true)}
+                  />
+                ) : (
+                  <OverflowPlaceholder onActivate={readyOverflow} />
+                )}
               </span>
               <span
                 className={cn(
@@ -214,10 +225,14 @@ export const ThreadCard = memo(function ThreadCard({
                       />
                     </span>
                   ) : null}
-                  <RowOverflowMenu
-                    thread={thread}
-                    onRename={() => setIsRenaming(true)}
-                  />
+                  {overflowReady ? (
+                    <RowOverflowMenu
+                      thread={thread}
+                      onRename={() => setIsRenaming(true)}
+                    />
+                  ) : (
+                    <OverflowPlaceholder onActivate={readyOverflow} />
+                  )}
                 </span>
                 <span
                   className={cn(
@@ -277,28 +292,7 @@ export const ThreadCard = memo(function ThreadCard({
                     count={thread.activity.backgroundAgents}
                   />
                 ) : null}
-                {pullRequest ? (
-                  <a
-                    href={pullRequest.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(event) => event.stopPropagation()}
-                    title={pullRequest.title}
-                    className={cn(
-                      "relative shrink-0 font-mono hover:underline",
-                      pullRequest.state === "merged"
-                        ? "text-[color:var(--pr-merged)]"
-                        : pullRequest.attention === "checks_failed" ||
-                            pullRequest.attention === "conflicts"
-                          ? "text-destructive-text"
-                          : pullRequest.attention === "ready_to_merge"
-                            ? "text-success-foreground"
-                            : "text-muted-foreground",
-                    )}
-                  >
-                    #{pullRequest.number}
-                  </a>
-                ) : null}
+                <PullRequestLink threadId={thread.id} />
                 {/* Always drawn, so the line has a fixed right edge. */}
                 <ProviderGlyph providerId={thread.providerId} />
               </div>
@@ -343,5 +337,62 @@ function ActivityCount({ label, count }: { label: string; count: number }) {
     >
       {count}
     </span>
+  );
+}
+
+/**
+ * The pull request for the thread's branch. It costs a git-host lookup
+ * (threads sharing a worktree share one), and only the spacious card shows
+ * it, so the lookup lives here and compact rows never start it.
+ */
+function PullRequestLink({ threadId }: { threadId: string }) {
+  const { pullRequest } = useSidebarThreadPullRequest(threadId);
+  if (!pullRequest) return null;
+  return (
+    <a
+      href={pullRequest.url}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => event.stopPropagation()}
+      title={pullRequest.title}
+      className={cn(
+        "relative shrink-0 font-mono hover:underline",
+        pullRequest.state === "merged"
+          ? "text-[color:var(--pr-merged)]"
+          : pullRequest.attention === "checks_failed" ||
+              pullRequest.attention === "conflicts"
+            ? "text-destructive-text"
+            : pullRequest.attention === "ready_to_merge"
+              ? "text-success-foreground"
+              : "text-muted-foreground",
+      )}
+    >
+      #{pullRequest.number}
+    </a>
+  );
+}
+
+/**
+ * Looks like the "…" button before its menu mounts. Hover or focus on the
+ * row replaces it first; a tap that lands here mounts the menu for the next
+ * tap.
+ */
+function OverflowPlaceholder({ onActivate }: { onActivate: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Thread actions"
+      onClick={(event) => {
+        event.stopPropagation();
+        onActivate();
+      }}
+      className={cn(
+        "pointer-events-auto rounded p-0.5 text-muted-foreground",
+        "opacity-0 hover:text-foreground focus-visible:opacity-100",
+        "group-hover/card:opacity-100",
+      )}
+    >
+      <Icon name="Ellipsis" className="size-3.5" />
+    </button>
   );
 }

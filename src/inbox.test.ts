@@ -314,12 +314,27 @@ describe("parentOf", () => {
 
 describe("filterListThreads", () => {
   const threads = [
-    thread({ id: "a", title: "Deploy docs", projectId: "p1", providerId: "codex" }),
+    thread({
+      id: "a",
+      title: "Deploy docs",
+      projectId: "p1",
+      providerId: "codex",
+    }),
     thread({ id: "b", title: "Deploy app", projectId: "p2", isUnread: true }),
-    thread({ id: "c", title: "Child", parentThreadId: "a", providerId: "claude-code" }),
+    thread({
+      id: "c",
+      title: "Child",
+      parentThreadId: "a",
+      providerId: "claude-code",
+    }),
     thread({ id: "d", title: "Orphan child", parentThreadId: "gone" }),
     thread({ id: "e", title: "Archived", isArchived: true }),
-    thread({ id: "f", title: "Asks", indicator: "waiting-for-input", projectId: "p1" }),
+    thread({
+      id: "f",
+      title: "Asks",
+      indicator: "waiting-for-input",
+      projectId: "p1",
+    }),
   ];
   const labels = new Map<string, readonly string[]>([
     ["a", ["auto"]],
@@ -334,7 +349,9 @@ describe("filterListThreads", () => {
           filterByProvider(
             filterByStatus(
               filterByProject(
-                filters.excludeArchived ? visibleInboxThreads(threads) : threads,
+                filters.excludeArchived
+                  ? visibleInboxThreads(threads)
+                  : threads,
                 filters.projectId,
               ),
               filters.statusFilter,
@@ -370,7 +387,10 @@ describe("filterListThreads", () => {
     ["hide label", { labelIds: ["ops"], labelMode: "hide" }],
     ["query", { query: "deploy" }],
     ["archive view", { excludeArchived: false }],
-    ["combined", { projectId: "p1", labelIds: ["auto"], labelMode: "only", query: "a" }],
+    [
+      "combined",
+      { projectId: "p1", labelIds: ["auto"], labelMode: "only", query: "a" },
+    ],
   ] as const)("matches the chained filters: %s", (_name, patch) => {
     const filters = { ...base, ...patch };
     expect(filterListThreads(threads, filters).map((t) => t.id)).toEqual(

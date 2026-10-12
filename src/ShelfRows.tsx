@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useLayoutEffect,
   useRef,
   useState,
@@ -61,11 +62,17 @@ export function ShelfRows<T extends { id: string }>({
   items,
   rowHeight,
   scrollRef,
+  layoutKey = "",
   renderRow,
 }: {
   items: readonly T[];
   /** Expected row height; rows are measured once they render. */
   rowHeight: number;
+  /**
+   * Changes when a shelf appears or goes above this one. The list then reads
+   * its offset again; size changes above it are observed without help.
+   */
+  layoutKey?: string;
   /**
    * The sidebar's scrolling container, shared by every shelf. A ref, not the
    * element: the container mounts in the same commit as the first rows, and
@@ -86,6 +93,7 @@ export function ShelfRows<T extends { id: string }>({
       items={items}
       rowHeight={rowHeight}
       scrollRef={scrollRef}
+      layoutKey={layoutKey}
       renderRow={renderRow}
     />
   );
@@ -95,44 +103,82 @@ function VirtualRows<T extends { id: string }>({
   items,
   rowHeight,
   scrollRef,
+  layoutKey,
   renderRow,
 }: {
   items: readonly T[];
   rowHeight: number;
   scrollRef: RefObject<HTMLElement | null>;
+  layoutKey: string;
   renderRow: (item: T, placement: RowPlacement) => ReactNode;
 }) {
   const listRef = useRef<HTMLUListElement>(null);
   // Shelves above this one (pinned, headers) push it down the shared scroll
   // container. The virtualiser needs that offset to know which rows show.
+  // Reading it forces a style pass, so it is read when the content above
+  // changes size, never on an ordinary render such as a scroll.
   const [scrollMargin, setScrollMargin] = useState(0);
   useLayoutEffect(() => {
     const list = listRef.current;
     const scrollElement = scrollRef.current;
     if (list === null || scrollElement === null) return;
-    const margin =
-      list.getBoundingClientRect().top -
-      scrollElement.getBoundingClientRect().top +
-      scrollElement.scrollTop;
-    if (Math.abs(margin - scrollMargin) > 0.5) setScrollMargin(margin);
-  });
+    // The scroll container is positioned, so offsetTop is the distance from
+    // the top of the scrolled content.
+    const update = () => {
+      const margin = list.offsetTop;
+      setScrollMargin((current) =>
+        Math.abs(current - margin) > 0.5 ? margin : current,
+      );
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    for (
+      let node: Element | null = list;
+      node !== null && node !== scrollElement;
+      node = node.parentElement
+    ) {
+      for (
+        let sibling = node.previousElementSibling;
+        sibling !== null;
+        sibling = sibling.previousElementSibling
+      ) {
+        observer.observe(sibling);
+      }
+    }
+    return () => observer.disconnect();
+  }, [layoutKey, scrollRef]);
+
+  // Stable options. A new getItemKey on each render makes the virtualiser
+  // rebuild the position of every row, thousands of them, on every scroll.
+  const getItemKey = useCallback((index: number) => items[index]!.id, [items]);
+  const estimateSize = useCallback(() => rowHeight, [rowHeight]);
+  const getScrollElement = useCallback(() => scrollRef.current, [scrollRef]);
+  // A hidden sidebar measures every row as 0px. Taken at face value, every
+  // row would then fit on screen and the whole list would render.
+  const measureRow = useCallback(
+    (
+      element: Element,
+      entry: ResizeObserverEntry | undefined,
+      instance: Virtualizer<HTMLElement, Element>,
+    ) => {
+      const size = measureElement(element, entry, instance);
+      return size > 0 ? size : rowHeight;
+    },
+    [rowHeight],
+  );
 
   const virtualizer = useVirtualizer({
     count: items.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => rowHeight,
-    getItemKey: (index) => items[index]!.id,
+    getScrollElement,
+    estimateSize,
+    getItemKey,
     overscan: 8,
     gap: 1,
     scrollMargin,
     initialRect: FALLBACK_RECT,
     observeElementRect: observeRectWithFallback,
-    // A hidden sidebar measures every row as 0px. Taken at face value, every
-    // row would then fit on screen and the whole list would render.
-    measureElement: (element, entry, instance) => {
-      const size = measureElement(element, entry, instance);
-      return size > 0 ? size : rowHeight;
-    },
+    measureElement: measureRow,
   });
 
   return (
