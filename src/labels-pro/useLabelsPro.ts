@@ -6,6 +6,7 @@ import {
 import {
   LabelsProUnavailableError,
   loadLabelsSnapshot,
+  snapshotSignature,
 } from "./client";
 import {
   LABELS_PRO_REALTIME_CHANNEL,
@@ -32,30 +33,50 @@ export function useLabelsPro(): LabelsProState {
   const [state, setState] = useState<LabelsProState>({ status: "loading" });
   const connection = useRealtimeConnectionState();
   const inFlight = useRef(false);
+  // A refresh asked for while one runs must not be lost: the running fetch
+  // may have read the store before the change it was asked about.
+  const rerun = useRef(false);
+  const lastSignature = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (inFlight.current) return;
+    if (inFlight.current) {
+      rerun.current = true;
+      return;
+    }
     inFlight.current = true;
     try {
-      const snapshot = await loadLabelsSnapshot();
-      setState({
-        status: "ready",
-        labels: snapshot.labels,
-        labelIdsByThreadId: snapshot.labelIdsByThreadId,
-      });
-    } catch (error) {
-      if (
-        error instanceof LabelsProUnavailableError &&
-        error.code === "unavailable"
-      ) {
-        setState({ status: "unavailable" });
-        return;
-      }
-      // Transient RPC/parse errors: keep prior ready data if any; otherwise
-      // treat as unavailable so the filter stays hidden rather than stuck.
-      setState((current) =>
-        current.status === "ready" ? current : { status: "unavailable" },
-      );
+      do {
+        rerun.current = false;
+        try {
+          const snapshot = await loadLabelsSnapshot();
+          // Every poll used to produce a new map, which re-ran the filters
+          // and redrew every row. Keep the current state when the content
+          // is the same.
+          const signature = snapshotSignature(snapshot);
+          if (signature === lastSignature.current) continue;
+          lastSignature.current = signature;
+          setState({
+            status: "ready",
+            labels: snapshot.labels,
+            labelIdsByThreadId: snapshot.labelIdsByThreadId,
+          });
+        } catch (error) {
+          if (
+            error instanceof LabelsProUnavailableError &&
+            error.code === "unavailable"
+          ) {
+            lastSignature.current = null;
+            setState({ status: "unavailable" });
+            continue;
+          }
+          // Transient RPC/parse errors: keep prior ready data if any;
+          // otherwise treat as unavailable so the filter stays hidden rather
+          // than stuck.
+          setState((current) =>
+            current.status === "ready" ? current : { status: "unavailable" },
+          );
+        }
+      } while (rerun.current);
     } finally {
       inFlight.current = false;
     }

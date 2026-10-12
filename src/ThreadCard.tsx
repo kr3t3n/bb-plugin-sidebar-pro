@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   experimental_useSidebarThreadPullRequest as useSidebarThreadPullRequest,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
@@ -16,6 +16,51 @@ import { TitleEditor } from "./TitleEditor";
 import { threadDisplayTitle } from "./inbox";
 import { resolveSnoozePresets } from "./lifecycle";
 import type { LabelsProLabel } from "./labels-pro/contract";
+import { placementProps, type RowPlacement } from "./ShelfRows";
+import { sameSidebarThread } from "./thread-equality";
+
+type ThreadCardProps = {
+  thread: PluginSidebarThread;
+  projectName: string | null;
+  isActive: boolean;
+  /** False while the thread is working or blocked on the user. */
+  canPark: boolean;
+  density: "spacious" | "compact";
+  /** Labels Pro assignments for this thread; empty when Labels Pro is off. */
+  labels?: readonly LabelsProLabel[];
+  onNavigate: () => void;
+  onSettle: (threadId: string) => void;
+  onSnooze: (threadId: string, snoozedUntil: number) => void;
+  /** Quantized clock, so every card in one render agrees on "now". */
+  now: number;
+  /** Set when the shelf is virtualised. */
+  placement?: RowPlacement;
+};
+
+const NO_PLACEMENT: RowPlacement = {};
+
+/**
+ * A card redraws only when something it shows changes. The list passes
+ * stable callbacks and shared label arrays, so a feed update that touches one
+ * thread redraws one card, not the whole list.
+ */
+function sameCardProps(left: ThreadCardProps, right: ThreadCardProps): boolean {
+  return (
+    sameSidebarThread(left.thread, right.thread) &&
+    left.projectName === right.projectName &&
+    left.isActive === right.isActive &&
+    left.canPark === right.canPark &&
+    left.density === right.density &&
+    left.labels === right.labels &&
+    left.onNavigate === right.onNavigate &&
+    left.onSettle === right.onSettle &&
+    left.onSnooze === right.onSnooze &&
+    left.now === right.now &&
+    left.placement?.top === right.placement?.top &&
+    left.placement?.index === right.placement?.index &&
+    left.placement?.measureRef === right.placement?.measureRef
+  );
+}
 
 /**
  * One thread as a three-line card: project and status, title, then branch and
@@ -26,7 +71,7 @@ import type { LabelsProLabel } from "./labels-pro/contract";
  * controls, the way bb's own thread row does it: a `<button>` inside an `<a>`
  * is invalid interactive nesting and breaks keyboard behaviour.
  */
-export function ThreadCard({
+export const ThreadCard = memo(function ThreadCard({
   thread,
   projectName,
   isActive,
@@ -37,21 +82,8 @@ export function ThreadCard({
   onSettle,
   onSnooze,
   now,
-}: {
-  thread: PluginSidebarThread;
-  projectName: string | null;
-  isActive: boolean;
-  /** False while the thread is working or blocked on the user. */
-  canPark: boolean;
-  density: "spacious" | "compact";
-  /** Labels Pro assignments for this thread; empty when Labels Pro is off. */
-  labels?: readonly LabelsProLabel[];
-  onNavigate: () => void;
-  onSettle: () => void;
-  onSnooze: (snoozedUntil: number) => void;
-  /** Quantized clock, so every card in one render agrees on "now". */
-  now: number;
-}) {
+  placement = NO_PLACEMENT,
+}: ThreadCardProps) {
   const actions = useSidebarThreadActions();
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
   // Opt-in per row: this costs a git-host lookup, and threads sharing a
@@ -68,7 +100,7 @@ export function ThreadCard({
 
   return (
     <RowContextMenu thread={thread} onRename={() => setIsRenaming(true)}>
-      <li className="list-none">
+      <li className="list-none" {...placementProps(placement)}>
         <div
           className={cn(
             "group/card relative rounded-md px-2.5 transition-colors",
@@ -127,6 +159,7 @@ export function ThreadCard({
                       icon="Clock"
                       onActivate={() =>
                         onSnooze(
+                          thread.id,
                           resolveSnoozePresets(new Date())[2]!.snoozedUntil,
                         )
                       }
@@ -134,7 +167,7 @@ export function ThreadCard({
                     <ParkButton
                       label="Settle thread"
                       icon="Check"
-                      onActivate={onSettle}
+                      onActivate={() => onSettle(thread.id)}
                     />
                   </span>
                 ) : null}
@@ -169,6 +202,7 @@ export function ThreadCard({
                         icon="Clock"
                         onActivate={() =>
                           onSnooze(
+                            thread.id,
                             resolveSnoozePresets(new Date())[2]!.snoozedUntil,
                           )
                         }
@@ -176,7 +210,7 @@ export function ThreadCard({
                       <ParkButton
                         label="Settle thread"
                         icon="Check"
-                        onActivate={onSettle}
+                        onActivate={() => onSettle(thread.id)}
                       />
                     </span>
                   ) : null}
@@ -274,7 +308,7 @@ export function ThreadCard({
       </li>
     </RowContextMenu>
   );
-}
+}, sameCardProps);
 
 function ParkButton({
   label,

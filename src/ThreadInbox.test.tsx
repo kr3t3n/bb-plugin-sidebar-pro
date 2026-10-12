@@ -1096,3 +1096,27 @@ describe("Labels Pro filter", () => {
     });
   });
 });
+
+describe("long lists", () => {
+  it("renders only a window of rows, newest first", () => {
+    render(
+      Array.from({ length: 400 }, (_, index) =>
+        thread({ id: `thr_${index}`, title: `Thread ${index}`, createdAt: index }),
+      ),
+    );
+    const rows = screen.getAllByRole("listitem");
+    // One screen plus overscan, not 400 rows.
+    expect(rows.length).toBeGreaterThan(5);
+    expect(rows.length).toBeLessThan(60);
+    expect(rows[0]!.textContent).toContain("Thread 399");
+  });
+
+  it("keeps short lists as plain rows", () => {
+    render(
+      Array.from({ length: 30 }, (_, index) =>
+        thread({ id: `thr_${index}`, title: `Thread ${index}`, createdAt: index }),
+      ),
+    );
+    expect(screen.getAllByRole("listitem")).toHaveLength(30);
+  });
+});

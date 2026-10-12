@@ -264,3 +264,57 @@ export function childrenOf(
     .filter((thread) => thread.parentThreadId === parentThreadId)
     .sort((left, right) => left.createdAt - right.createdAt);
 }
+
+export interface ListFilters {
+  /** Project id, or null for every project. */
+  projectId: string | null;
+  statusFilter: StatusFilter;
+  providerId: string;
+  labelIds: readonly string[];
+  labelIdsByThreadId: ReadonlyMap<string, readonly string[]> | null;
+  labelMode: LabelFilterMode;
+  query: string;
+  /** Drop archived rows (the live inbox); the archive view keeps them. */
+  excludeArchived: boolean;
+}
+
+/**
+ * Every list filter in one pass, then the child-hiding rule. Same result as
+ * chaining the single filters above, without a copy of the whole list per
+ * step: with thousands of threads, each copy cost a visible pause.
+ */
+export function filterListThreads(
+  threads: readonly PluginSidebarThread[],
+  filters: ListFilters,
+): PluginSidebarThread[] {
+  const labelFilterOn =
+    filters.labelMode !== "all" &&
+    filters.labelIds.length > 0 &&
+    filters.labelIdsByThreadId !== null;
+  const selectedLabels = labelFilterOn ? new Set(filters.labelIds) : null;
+  const filtered = threads.filter((thread) => {
+    if (filters.excludeArchived && thread.isArchived) return false;
+    if (filters.projectId !== null && thread.projectId !== filters.projectId) {
+      return false;
+    }
+    if (!matchesStatusFilter(thread, filters.statusFilter)) return false;
+    if (
+      filters.providerId !== ALL_PROVIDERS &&
+      thread.providerId !== filters.providerId
+    ) {
+      return false;
+    }
+    if (selectedLabels !== null) {
+      const ids = filters.labelIdsByThreadId!.get(thread.id) ?? [];
+      const hit = ids.some((id) => selectedLabels.has(id));
+      if (filters.labelMode === "hide" ? hit : !hit) return false;
+    }
+    return true;
+  });
+  // Children hide only behind a parent that passed the filters, so this runs
+  // on the filtered set, before the title search, exactly as the chain did.
+  return searchThreadsByTitle(
+    hideChildrenOfVisibleParents(filtered),
+    filters.query,
+  );
+}

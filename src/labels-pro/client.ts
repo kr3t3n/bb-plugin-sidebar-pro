@@ -124,9 +124,15 @@ export async function loadLabelsSnapshot(): Promise<{
     }),
   );
 
+  // The label calls finish in any order. Sort each thread's ids by label
+  // order, so chips keep their places from one refresh to the next.
+  const order = new Map(labels.map((label, index) => [label.id, index]));
   const labelIdsByThreadId = new Map<string, readonly string[]>();
   for (const [threadId, ids] of mutable) {
-    labelIdsByThreadId.set(threadId, ids);
+    labelIdsByThreadId.set(
+      threadId,
+      ids.sort((left, right) => order.get(left)! - order.get(right)!),
+    );
   }
   return { labels, labelIdsByThreadId };
 }
@@ -146,4 +152,48 @@ export function labelsForThread(
     if (label) resolved.push(label);
   }
   return resolved;
+}
+
+const NO_LABELS: readonly LabelsProLabel[] = [];
+
+/**
+ * Label DTOs for every labelled thread, built once per snapshot. Rows read
+ * their array from here, so an unchanged thread gets the same array on every
+ * render and its card can skip the redraw.
+ */
+export function labelsByThreadId(
+  labels: readonly LabelsProLabel[],
+  labelIdsByThreadId: ReadonlyMap<string, readonly string[]>,
+): ReadonlyMap<string, readonly LabelsProLabel[]> {
+  const byId = new Map(labels.map((label) => [label.id, label]));
+  const result = new Map<string, readonly LabelsProLabel[]>();
+  for (const [threadId, ids] of labelIdsByThreadId) {
+    const resolved = ids.flatMap((id) => byId.get(id) ?? []);
+    if (resolved.length > 0) result.set(threadId, resolved);
+  }
+  return result;
+}
+
+export function labelsFor(
+  threadId: string,
+  byThread: ReadonlyMap<string, readonly LabelsProLabel[]> | null,
+): readonly LabelsProLabel[] {
+  return byThread?.get(threadId) ?? NO_LABELS;
+}
+
+/**
+ * A stable text form of a snapshot, for "did anything change" checks. Label
+ * calls finish in any order, so ids are sorted before they are compared.
+ */
+export function snapshotSignature(snapshot: {
+  labels: readonly LabelsProLabel[];
+  labelIdsByThreadId: ReadonlyMap<string, readonly string[]>;
+}): string {
+  const labels = [...snapshot.labels]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((label) => JSON.stringify(label));
+  const assignments = [...snapshot.labelIdsByThreadId]
+    .map(([threadId, ids]) => `${threadId}:${[...ids].sort().join(",")}`)
+    .sort();
+  return `${labels.join("\n")}\n--\n${assignments.join("\n")}`;
 }

@@ -6,7 +6,14 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "./components/Icon";
 import { cn } from "./lib/utils";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Select,
   SelectContent,
@@ -28,12 +35,8 @@ import {
 import { TRAILING_GLYPH_BOX_CLASS } from "./StatusSlot";
 import {
   filterByLabel,
-  filterByProject,
-  filterByProvider,
-  filterByStatus,
-  hideChildrenOfVisibleParents,
+  filterListThreads,
   partitionPinned,
-  searchThreadsByTitle,
   sortThreads,
   uniqueProviderIds,
   visibleInboxThreads,
@@ -54,7 +57,13 @@ import {
   type ThreadSort,
 } from "./list-preference";
 import { useLabelsPro } from "./labels-pro/useLabelsPro";
-import { labelsForThread } from "./labels-pro/client";
+import { labelsByThreadId, labelsFor } from "./labels-pro/client";
+import { ShelfRows } from "./ShelfRows";
+
+/** Expected row heights in pixels; rows are measured once they render. */
+const ROW_HEIGHT = { spacious: 76, compact: 32, slim: 32 } as const;
+
+const noop = () => undefined;
 import { LabelFilterMenu } from "./LabelFilterMenu";
 import { ThreadSearch } from "./ThreadSearch";
 
@@ -104,13 +113,33 @@ export function ThreadInbox({
   const [showSettled, setShowSettled] = useState(false);
   const [listQuery, setListQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const effectiveQuery = listQuery.trim() !== "" ? listQuery : searchQuery;
+  // Typing stays responsive: the list filters on the deferred query, a
+  // frame later, while the field updates at once.
+  const deferredListQuery = useDeferredValue(listQuery);
+  const effectiveQuery =
+    deferredListQuery.trim() !== "" ? deferredListQuery : searchQuery;
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleNavigate = () => {
+  // Rows are memoised, so every callback they receive must keep its identity
+  // across renders. Refs carry the latest host callback and lifecycle store.
+  const onNavigateRef = useRef(onNavigate);
+  onNavigateRef.current = onNavigate;
+  const lifecycleRef = useRef(lifecycle);
+  lifecycleRef.current = lifecycle;
+  const handleNavigate = useCallback(() => {
     setListQuery("");
     setSearchOpen(false);
-    onNavigate();
-  };
+    onNavigateRef.current();
+  }, []);
+  const handleSettle = useCallback(
+    (threadId: string) => lifecycleRef.current.settle(threadId),
+    [],
+  );
+  const handleSnooze = useCallback(
+    (threadId: string, until: number) =>
+      lifecycleRef.current.snooze(threadId, until),
+    [],
+  );
 
   // In-list count only. OS toasts + Dock badge live in Notifications Pro.
   const attentionCount = useMemo(
@@ -212,23 +241,23 @@ export function ThreadInbox({
   );
 
   const { pinned, inbox, snoozed, settled } = useMemo(() => {
-    if (showArchived) {
-      const scoped = filterByProject(
-        archived.threads,
-        scope === ALL_PROJECTS ? null : scope,
-      );
-      const byStatus = filterByStatus(scoped, preference.statusFilter);
-      const byProvider = filterByProvider(byStatus, preference.providerId);
-      const byLabel = filterByLabel(
-        byProvider,
-        effectiveLabelIds,
+    const matched = filterListThreads(
+      showArchived ? archived.threads : threads,
+      {
+        projectId: scope === ALL_PROJECTS ? null : scope,
+        statusFilter: preference.statusFilter,
+        providerId: preference.providerId,
+        labelIds: effectiveLabelIds,
         labelIdsByThreadId,
-        effectiveLabelMode,
-      );
-      const matched = searchThreadsByTitle(
-        hideChildrenOfVisibleParents(byLabel),
-        listQuery.trim(),
-      );
+        labelMode: effectiveLabelMode,
+        // The archive view ignores the host's search box: it searches live
+        // threads only.
+        query: showArchived ? deferredListQuery : effectiveQuery,
+        excludeArchived: !showArchived,
+      },
+    );
+
+    if (showArchived) {
       const split = partitionPinned(matched);
       return {
         pinned: sortThreads(split.pinned, preference.sort),
@@ -238,24 +267,6 @@ export function ThreadInbox({
       };
     }
 
-    const scoped = filterByProject(
-      visibleInboxThreads(threads),
-      scope === ALL_PROJECTS ? null : scope,
-    );
-    const byStatus = filterByStatus(scoped, preference.statusFilter);
-    const byProvider = filterByProvider(byStatus, preference.providerId);
-    const byLabel = filterByLabel(
-      byProvider,
-      effectiveLabelIds,
-      labelIdsByThreadId,
-      effectiveLabelMode,
-    );
-    // Children live in their parent's header chip instead of the flat list;
-    // an orphan whose parent is not on screen stays here.
-    const matched = searchThreadsByTitle(
-      hideChildrenOfVisibleParents(byLabel),
-      effectiveQuery,
-    );
     const active: typeof matched = [];
     const onSnoozeShelf: typeof matched = [];
     const onSettledShelf: typeof matched = [];
@@ -276,19 +287,20 @@ export function ThreadInbox({
       ),
       settled: sortThreads(onSettledShelf, preference.sort),
     };
+    // `effectiveLabelIds` is a new array on every render; its contents are
+    // `preference.labelIds` filtered by the label snapshot, both listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     archived.threads,
-    effectiveLabelIds,
+    deferredListQuery,
     effectiveLabelMode,
+    effectiveQuery,
+    knownLabelIdSet,
     labelIdsByThreadId,
-    labelsPro,
-    labelsReady,
     lifecycle,
-    listQuery,
     preference,
     scope,
     showArchived,
-    effectiveQuery,
     threads,
   ]);
 
@@ -299,14 +311,13 @@ export function ThreadInbox({
 
   const density: Density = preference.density;
 
-  const threadLabels = (threadId: string) =>
-    labelsReady
-      ? labelsForThread(
-          threadId,
-          labelsPro.labels,
-          labelsPro.labelIdsByThreadId,
-        )
-      : [];
+  const labelsByThread = useMemo(
+    () =>
+      labelsPro.status === "ready"
+        ? labelsByThreadId(labelsPro.labels, labelsPro.labelIdsByThreadId)
+        : null,
+    [labelsPro],
+  );
 
   const setLabelFilter = (mode: LabelFilterMode, labelIds: string[]) => {
     updatePreference({
@@ -464,7 +475,10 @@ export function ThreadInbox({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+        <div
+          ref={scrollRef}
+          className="relative min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
+        >
           {showArchived && archived.status === "loading" ? (
             <p
               role="status"
@@ -494,7 +508,7 @@ export function ThreadInbox({
               className="px-2 py-6 text-center text-xs text-muted-foreground"
             >
               {showArchived
-                ? listQuery.trim() ||
+                ? deferredListQuery.trim() ||
                   preference.statusFilter !== "all" ||
                   preference.providerId !== ALL_PROVIDERS ||
                   (labelsReady && effectiveLabelMode !== "all")
@@ -511,72 +525,67 @@ export function ThreadInbox({
             <>
               {showArchived ? (
                 <Shelf label="Archived">
-                  {pinned.concat(inbox).map((thread) => (
-                    <ThreadCard
-                      key={thread.id}
-                      thread={thread}
-                      projectName={
-                        projectNameById.get(thread.projectId) ?? null
-                      }
-                      isActive={thread.id === activeThreadId}
-                      canPark={false}
-                      density={density}
-                      labels={threadLabels(thread.id)}
-                      onNavigate={handleNavigate}
-                      onSettle={() => undefined}
-                      onSnooze={() => undefined}
-                      now={now}
-                    />
-                  ))}
+                  <ShelfRows
+                    items={pinned.concat(inbox)}
+                    rowHeight={ROW_HEIGHT[density]}
+                    scrollRef={scrollRef}
+                    renderRow={(thread, placement) => (
+                      <ThreadCard
+                        key={thread.id}
+                        thread={thread}
+                        projectName={
+                          projectNameById.get(thread.projectId) ?? null
+                        }
+                        isActive={thread.id === activeThreadId}
+                        canPark={false}
+                        density={density}
+                        labels={labelsFor(thread.id, labelsByThread)}
+                        onNavigate={handleNavigate}
+                        onSettle={noop}
+                        onSnooze={noop}
+                        now={now}
+                        placement={placement}
+                      />
+                    )}
+                  />
                 </Shelf>
               ) : (
                 <>
-                  {pinned.length > 0 ? (
-                    <Shelf label="Pinned">
-                      {pinned.map((thread) => (
-                        <ThreadCard
-                          key={thread.id}
-                          thread={thread}
-                          projectName={
-                            projectNameById.get(thread.projectId) ?? null
-                          }
-                          isActive={thread.id === activeThreadId}
-                          canPark={lifecycle.canPark(thread)}
-                          density={density}
-                          labels={threadLabels(thread.id)}
-                          onNavigate={handleNavigate}
-                          onSettle={() => lifecycle.settle(thread.id)}
-                          onSnooze={(until) =>
-                            lifecycle.snooze(thread.id, until)
-                          }
-                          now={now}
+                  {[
+                    { label: "Pinned", rows: pinned },
+                    {
+                      label: pinned.length > 0 ? "Inbox" : null,
+                      rows: inbox,
+                    },
+                  ].map(({ label, rows }) =>
+                    rows.length > 0 ? (
+                      <Shelf key={label ?? "inbox"} label={label}>
+                        <ShelfRows
+                          items={rows}
+                          rowHeight={ROW_HEIGHT[density]}
+                          scrollRef={scrollRef}
+                          renderRow={(thread, placement) => (
+                            <ThreadCard
+                              key={thread.id}
+                              thread={thread}
+                              projectName={
+                                projectNameById.get(thread.projectId) ?? null
+                              }
+                              isActive={thread.id === activeThreadId}
+                              canPark={lifecycle.canPark(thread)}
+                              density={density}
+                              labels={labelsFor(thread.id, labelsByThread)}
+                              onNavigate={handleNavigate}
+                              onSettle={handleSettle}
+                              onSnooze={handleSnooze}
+                              now={now}
+                              placement={placement}
+                            />
+                          )}
                         />
-                      ))}
-                    </Shelf>
-                  ) : null}
-                  {inbox.length > 0 ? (
-                    <Shelf label={pinned.length > 0 ? "Inbox" : null}>
-                      {inbox.map((thread) => (
-                        <ThreadCard
-                          key={thread.id}
-                          thread={thread}
-                          projectName={
-                            projectNameById.get(thread.projectId) ?? null
-                          }
-                          isActive={thread.id === activeThreadId}
-                          canPark={lifecycle.canPark(thread)}
-                          density={density}
-                          labels={threadLabels(thread.id)}
-                          onNavigate={handleNavigate}
-                          onSettle={() => lifecycle.settle(thread.id)}
-                          onSnooze={(until) =>
-                            lifecycle.snooze(thread.id, until)
-                          }
-                          now={now}
-                        />
-                      ))}
-                    </Shelf>
-                  ) : null}
+                      </Shelf>
+                    ) : null,
+                  )}
                   <ParkedShelf
                     label="Snoozed"
                     threads={snoozed}
@@ -586,6 +595,7 @@ export function ThreadInbox({
                     activeThreadId={activeThreadId}
                     lifecycle={lifecycle}
                     onNavigate={handleNavigate}
+                    scrollRef={scrollRef}
                   />
                   <ParkedShelf
                     label="Settled"
@@ -596,6 +606,7 @@ export function ThreadInbox({
                     activeThreadId={activeThreadId}
                     lifecycle={lifecycle}
                     onNavigate={handleNavigate}
+                    scrollRef={scrollRef}
                   />
                 </>
               )}
@@ -803,6 +814,7 @@ function ParkedShelf({
   activeThreadId,
   lifecycle,
   onNavigate,
+  scrollRef,
 }: {
   label: string;
   threads: readonly PluginSidebarThread[];
@@ -812,6 +824,7 @@ function ParkedShelf({
   activeThreadId: string | null;
   lifecycle: ReturnType<typeof useLifecycle>;
   onNavigate: () => void;
+  scrollRef: React.RefObject<HTMLElement | null>;
 }) {
   if (threads.length === 0) return null;
   return (
@@ -837,14 +850,19 @@ function ParkedShelf({
         </span>
       </button>
       {expanded ? (
-        <ul className="flex flex-col gap-px">
-          {threads.map((thread) => (
+        <ShelfRows
+          items={threads}
+          rowHeight={ROW_HEIGHT.slim}
+          scrollRef={scrollRef}
+          renderRow={(thread, placement) => (
             <SlimRow
               key={thread.id}
               thread={thread}
               isActive={thread.id === activeThreadId}
               shelf={shelf}
               wakeAt={lifecycle.wakeAtFor(thread)}
+              // The exact clock: a wake countdown rounds up, so a clock
+              // floored to the minute would show "3h" for a 2h snooze.
               now={Date.now()}
               onNavigate={onNavigate}
               onRestore={() =>
@@ -852,9 +870,10 @@ function ParkedShelf({
                   ? lifecycle.unsnooze(thread.id)
                   : lifecycle.unsettle(thread.id)
               }
+              placement={placement}
             />
-          ))}
-        </ul>
+          )}
+        />
       ) : null}
     </section>
   );
@@ -877,7 +896,7 @@ function Shelf({
           <span className="h-px flex-1 bg-sidebar-border" />
         </h2>
       ) : null}
-      <ul className="flex flex-col gap-px">{children}</ul>
+      {children}
     </section>
   );
 }

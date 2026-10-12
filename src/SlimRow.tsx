@@ -11,6 +11,7 @@ import { STATUS_SLOT_CLASS, StatusOrTime } from "./StatusSlot";
 import { TitleEditor } from "./TitleEditor";
 import { threadDisplayTitle } from "./inbox";
 import { snoozeWakeLabel } from "./lifecycle";
+import { placementProps, type RowPlacement } from "./ShelfRows";
 
 /**
  * A parked thread: one line instead of a card. Density comes from the user
@@ -27,6 +28,7 @@ export function SlimRow({
   now,
   onNavigate,
   onRestore,
+  placement = {},
 }: {
   thread: PluginSidebarThread;
   isActive: boolean;
@@ -35,6 +37,8 @@ export function SlimRow({
   now: number;
   onNavigate: () => void;
   onRestore: () => void;
+  /** Set when the shelf is virtualised. */
+  placement?: RowPlacement;
 }) {
   const actions = useSidebarThreadActions();
   const title = threadDisplayTitle(thread);
@@ -42,7 +46,7 @@ export function SlimRow({
 
   return (
     <RowContextMenu thread={thread} onRename={() => setIsRenaming(true)}>
-      <li className="list-none">
+      <li className="list-none" {...placementProps(placement)}>
         <div
           className={cn(
             "group/slim relative flex h-8 items-center gap-2 rounded-md px-2.5 text-xs",

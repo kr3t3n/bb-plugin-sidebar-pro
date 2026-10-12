@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  labelsByThreadId,
+  labelsFor,
   labelsForThread,
   LabelsProUnavailableError,
   listLabels,
   listThreadsByLabel,
   loadLabelsSnapshot,
+  snapshotSignature,
 } from "./client";
 import type { LabelsProLabel } from "./contract";
 
@@ -156,5 +159,56 @@ describe("loadLabelsSnapshot", () => {
     await expect(listThreadsByLabel("lbl_1")).resolves.toMatchObject({
       threadIds: ["thr_a", "thr_b"],
     });
+  });
+});
+
+describe("snapshotSignature", () => {
+  const other: LabelsProLabel = { ...sampleLabel, id: "lbl_2", name: "Ops", slug: "ops" };
+
+  it("ignores the order labels and assignments arrive in", () => {
+    const first = snapshotSignature({
+      labels: [sampleLabel, other],
+      labelIdsByThreadId: new Map([
+        ["thr_a", ["lbl_1", "lbl_2"]],
+        ["thr_b", ["lbl_2"]],
+      ]),
+    });
+    const second = snapshotSignature({
+      labels: [other, sampleLabel],
+      labelIdsByThreadId: new Map([
+        ["thr_b", ["lbl_2"]],
+        ["thr_a", ["lbl_2", "lbl_1"]],
+      ]),
+    });
+    expect(second).toBe(first);
+  });
+
+  it("changes when an assignment or a label definition changes", () => {
+    const base = {
+      labels: [sampleLabel],
+      labelIdsByThreadId: new Map([["thr_a", ["lbl_1"]]]),
+    };
+    const signature = snapshotSignature(base);
+    expect(
+      snapshotSignature({ ...base, labelIdsByThreadId: new Map([["thr_b", ["lbl_1"]]]) }),
+    ).not.toBe(signature);
+    expect(
+      snapshotSignature({ ...base, labels: [{ ...sampleLabel, name: "Renamed" }] }),
+    ).not.toBe(signature);
+  });
+});
+
+describe("labelsByThreadId", () => {
+  it("resolves each thread once and shares an empty array for the rest", () => {
+    const byThread = labelsByThreadId(
+      [sampleLabel],
+      new Map([
+        ["thr_a", ["lbl_1"]],
+        ["thr_gone", ["missing"]],
+      ]),
+    );
+    expect(labelsFor("thr_a", byThread).map((label) => label.id)).toEqual(["lbl_1"]);
+    expect(labelsFor("thr_gone", byThread)).toBe(labelsFor("thr_none", byThread));
+    expect(labelsFor("thr_a", null)).toEqual([]);
   });
 });
