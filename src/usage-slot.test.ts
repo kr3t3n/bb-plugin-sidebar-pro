@@ -4,6 +4,7 @@ import {
   SIDEBAR_TOGGLE_SELECTOR,
   USAGE_SCREEN_PATH,
   USAGE_SLOT_ATTR,
+  USAGE_SLOT_OWN_ROW_ATTR,
   ensureUsageSlot,
   openUsageScreen,
   sidebarToggleClearancePx,
@@ -30,6 +31,43 @@ describe("ensureUsageSlot", () => {
     expect(row?.firstElementChild).toBe(slot);
     expect(slot?.getAttribute(USAGE_SLOT_ATTR)).toBe("");
     expect(ensureUsageSlot(document)).toBe(slot);
+  });
+
+  it("puts the slot on its own row when the row holds New thread", () => {
+    document.body.innerHTML = `
+      <div data-testid="app-sidebar-body">
+        <div data-testid="app-sidebar-top-reserve-row">
+          <div data-testid="nav-rail-header"><button type="button">New thread</button></div>
+          <div><button type="button" aria-label="Go back"></button></div>
+        </div>
+        <div data-testid="list"></div>
+      </div>
+    `;
+    const slot = ensureUsageSlot(document);
+    const row = document.querySelector('[data-testid="app-sidebar-top-reserve-row"]');
+    expect(slot).not.toBeNull();
+    expect(slot?.parentElement).toBe(row?.parentElement);
+    expect(row?.nextElementSibling).toBe(slot);
+    expect(row?.contains(slot!)).toBe(false);
+    expect(slot?.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR)).toBe(true);
+    expect(ensureUsageSlot(document)).toBe(slot);
+  });
+
+  it("skips the toggle clearance on its own row", () => {
+    document.body.innerHTML = `
+      <button type="button" aria-label="Toggle sidebar"></button>
+      <div data-testid="app-sidebar-body">
+        <div data-testid="app-sidebar-top-reserve-row">
+          <div data-testid="nav-rail-header"></div>
+        </div>
+      </div>
+    `;
+    const slot = ensureUsageSlot(document)!;
+    const button = document.querySelector<HTMLElement>(SIDEBAR_TOGGLE_SELECTOR)!;
+    mockRect(slot, { left: 0, right: 280, top: 0, bottom: 32 });
+    mockRect(button, { left: 84, right: 112, top: 0, bottom: 28 });
+    syncUsageSlotPadding(slot);
+    expect(slot.style.getPropertyValue("--sidebar-pro-usage-pad")).toBe("");
   });
 
   it("returns null when the top row is missing", () => {

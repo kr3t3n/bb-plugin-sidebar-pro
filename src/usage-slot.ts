@@ -8,6 +8,12 @@ import { renderUsageCard, renderUsageMeters } from "./usage-meter";
 export const USAGE_ROW_SELECTOR = '[data-testid="app-sidebar-top-reserve-row"]';
 export const USAGE_SLOT_ATTR = "data-sidebar-pro-usage-slot";
 export const USAGE_SLOT_EVENT = "sidebar-pro-usage-slot";
+/**
+ * bb 0.46 puts the New thread button in the top row. That row then has no
+ * room for the figures, so they move to their own row below it.
+ */
+export const NAV_RAIL_HEADER_SELECTOR = '[data-testid="nav-rail-header"]';
+export const USAGE_SLOT_OWN_ROW_ATTR = "data-sidebar-pro-usage-own-row";
 
 export const USAGE_CARD_ID = "sidebar-pro-usage-card";
 /** The settings page of the built-in Provider usage plugin. */
@@ -46,6 +52,14 @@ const SLOT_CSS = `
   pointer-events: auto;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+[${USAGE_SLOT_ATTR}][${USAGE_SLOT_OWN_ROW_ATTR}] {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 2px 12px 6px;
+  overflow: hidden;
 }
 [${USAGE_SLOT_ATTR}] .meter {
   display: inline-flex;
@@ -157,9 +171,18 @@ export function ensureUsageSlot(root: ParentNode = document): HTMLElement | null
     slot.setAttribute(USAGE_SLOT_ATTR, "");
     changed = true;
   }
-  if (slot.parentElement !== row || row.firstElementChild !== slot) {
+  const ownRow = row.querySelector(NAV_RAIL_HEADER_SELECTOR) !== null;
+  if (ownRow) {
+    if (slot.previousElementSibling !== row) {
+      row.after(slot);
+      changed = true;
+    }
+  } else if (slot.parentElement !== row || row.firstElementChild !== slot) {
     row.insertBefore(slot, row.firstChild);
     changed = true;
+  }
+  if (slot.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR) !== ownRow) {
+    slot.toggleAttribute(USAGE_SLOT_OWN_ROW_ATTR, ownRow);
   }
   if (changed) doc.dispatchEvent(new CustomEvent(USAGE_SLOT_EVENT));
   return slot;
@@ -192,7 +215,10 @@ export function sidebarToggleClearancePx(
 
 /** Keep the browser padding, and grow it when the toggle sits further right. */
 export function syncUsageSlotPadding(slot: HTMLElement, root: ParentNode = document): void {
-  const clearance = sidebarToggleClearancePx(slot, root);
+  // On its own row the slot sits below the toggle. No clearance applies.
+  const clearance = slot.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR)
+    ? null
+    : sidebarToggleClearancePx(slot, root);
   if (clearance === null) {
     slot.style.removeProperty(USAGE_PAD_VAR);
     return;
