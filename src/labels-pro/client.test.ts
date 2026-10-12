@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  applyLabelChanges,
+  assignmentsToMap,
+  listAssignments,
   labelsByThreadId,
   labelsFor,
   labelsForThread,
@@ -210,5 +213,63 @@ describe("labelsByThreadId", () => {
     expect(labelsFor("thr_a", byThread).map((label) => label.id)).toEqual(["lbl_1"]);
     expect(labelsFor("thr_gone", byThread)).toBe(labelsFor("thr_none", byThread));
     expect(labelsFor("thr_a", null)).toEqual([]);
+  });
+});
+
+describe("bulk assignments", () => {
+  const alpha: LabelsProLabel = { ...sampleLabel, id: "a", name: "Alpha", slug: "alpha" };
+  const beta: LabelsProLabel = { ...sampleLabel, id: "b", name: "Beta", slug: "beta" };
+
+  it("inverts label groups into threads, in label order, dropping unknown labels", () => {
+    const map = assignmentsToMap(
+      [alpha, beta],
+      [
+        { labelId: "b", threadIds: ["t1", "t2"] },
+        { labelId: "a", threadIds: ["t1"] },
+        { labelId: "gone", threadIds: ["t3"] },
+      ],
+    );
+    expect(Object.fromEntries(map)).toEqual({ t1: ["a", "b"], t2: ["b"] });
+  });
+
+  it("applies a change message and drops threads with no labels left", () => {
+    const current = new Map<string, readonly string[]>([
+      ["t1", ["a"]],
+      ["t2", ["b"]],
+    ]);
+    const next = applyLabelChanges([alpha, beta], current, {
+      t1: ["b", "a"],
+      t2: [],
+      t3: ["a"],
+    });
+    expect(Object.fromEntries(next)).toEqual({ t1: ["a", "b"], t3: ["a"] });
+    expect(Object.fromEntries(current)).toEqual({ t1: ["a"], t2: ["b"] });
+  });
+
+  it("returns the same map when a message changes nothing", () => {
+    const current = new Map<string, readonly string[]>([["t1", ["a", "b"]]]);
+    expect(applyLabelChanges([alpha, beta], current, { t1: ["b", "a"], t9: [] })).toBe(
+      current,
+    );
+  });
+
+  it("tells an older Labels Pro apart from a missing one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ ok: false, error: { code: "unknown_method", message: "no" } }),
+          { status: 404 },
+        ),
+      ),
+    );
+    await expect(listAssignments(null)).rejects.toMatchObject({ code: "unknown_method" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ ok: false, error: "unknown plugin" }), { status: 404 }),
+      ),
+    );
+    await expect(listAssignments(null)).rejects.toMatchObject({ code: "unavailable" });
   });
 });

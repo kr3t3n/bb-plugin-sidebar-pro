@@ -9,11 +9,16 @@ import { claimBuiltinThreadList } from "./claim-thread-list";
 import { z } from "zod";
 import {
   ARCHIVED_CHANNEL,
-  ARCHIVED_LIST_LIMIT,
+  ARCHIVED_PAGE_SIZE,
+  type ArchivedChange,
   archivedThreadRowSchema,
   type ArchivedThreadRow,
 } from "./archived-contract";
 import { resolveCloudOrigin } from "./resolve-cloud-origin";
+import {
+  LABELS_PRO_PLUGIN_ID,
+  SIDEBAR_LABEL_CHANGES_CHANNEL,
+} from "./labels-pro/contract";
 import {
   normalizeProviderLimits,
   providerLimitsResultSchema,
@@ -142,10 +147,14 @@ export const t3sidebarRpcContract = defineRpcContract({
   listArchived: {
     input: z.object({
       projectId: z.string().trim().min(1).optional(),
+      /** Rows to skip, newest first (the host orders by last update). */
+      offset: z.number().int().nonnegative().optional(),
     }),
     output: z.object({
       threads: z.array(archivedThreadRowSchema),
-      truncated: z.boolean(),
+      /** Rows the host returned for this page, before malformed rows drop. */
+      pageRows: z.number().int(),
+      hasMore: z.boolean(),
     }),
   },
   unarchive: {
@@ -163,6 +172,19 @@ export const t3sidebarRpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean() }),
   },
   unsnooze: { input: threadIdSchema, output: z.object({ ok: z.boolean() }) },
+  /**
+   * Called by Labels Pro after label writes (see subscribeLabelChanges). The
+   * app delivers a realtime signal only to the plugin that sent it, so this
+   * server republishes the change for our own frontend.
+   */
+  labelsProChanged: {
+    input: z.object({
+      revision: z.number().int(),
+      threads: z.record(z.string(), z.array(z.string())),
+      labelsChanged: z.boolean(),
+    }),
+    output: z.object({ ok: z.boolean() }),
+  },
   /** Codex, Anthropic, and Cursor quota still left. No account email. */
   providerLimits: {
     input: z.object({}),
@@ -238,13 +260,63 @@ export default function plugin(bb: BbPluginApi) {
     bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
   };
 
-  const publishArchivedChanged = (): void => {
-    bb.realtime.publish(ARCHIVED_CHANNEL, { type: "changed" });
+  const publishArchivedChanged = (change: ArchivedChange): void => {
+    bb.realtime.publish(ARCHIVED_CHANNEL, change);
   };
+
+  // Ask Labels Pro to call labelsProChanged after label writes. Labels Pro
+  // stores the subscription, so one success is enough; repeating it is safe
+  // and covers a reinstall that lost it. Labels Pro may load after us, hence
+  // the early retries.
+  let labelsSubscribed = false;
+  const subscribeLabelChanges = async () => {
+    try {
+      await bb.sdk.plugins.callRpc({
+        pluginId: LABELS_PRO_PLUGIN_ID,
+        method: "subscribeChanges",
+        input: { method: "labelsProChanged" },
+        outputSchema: z.object({ revision: z.number() }),
+      });
+      if (!labelsSubscribed) {
+        labelsSubscribed = true;
+        // Changes made while we were not subscribed never reached us.
+        bb.realtime.publish(SIDEBAR_LABEL_CHANGES_CHANNEL, {
+          revision: 0,
+          threads: {},
+          labelsChanged: true,
+        });
+      }
+    } catch {
+      // Labels Pro is missing, disabled, or an older build. The frontend
+      // falls back on its own; nothing to report here.
+      labelsSubscribed = false;
+    }
+  };
+  void subscribeLabelChanges();
+  for (const delayMs of [30_000, 120_000]) {
+    setTimeout(() => void subscribeLabelChanges(), delayMs).unref?.();
+  }
+  bb.background.schedule("labels-pro-subscribe", "*/10 * * * *", () =>
+    subscribeLabelChanges(),
+  );
 
   bb.rpc.register(t3sidebarRpcContract, {
     async listLifecycle() {
       return { rows: readAll() };
+    },
+    labelsProChanged(input, context?: unknown) {
+      // Only Labels Pro may speak for Labels Pro. Older hosts pass no caller.
+      const caller = (
+        context as { experimental_caller?: { kind: string; pluginId?: string } }
+      )?.experimental_caller;
+      if (
+        caller !== undefined &&
+        !(caller.kind === "plugin" && caller.pluginId === LABELS_PRO_PLUGIN_ID)
+      ) {
+        return { ok: false };
+      }
+      bb.realtime.publish(SIDEBAR_LABEL_CHANGES_CHANNEL, input);
+      return { ok: true };
     },
     async linkOrigins() {
       return {
@@ -252,39 +324,34 @@ export default function plugin(bb: BbPluginApi) {
         cloudOrigin: await resolveCloudOrigin(),
       };
     },
-    async listArchived({ projectId }) {
-      const pageSize = 100;
+    async listArchived({ projectId, offset = 0 }) {
+      // One page per call. Loading every archived thread took up to 14 s
+      // with a few thousand rows, and the view needs one screen at first.
+      const page = await bb.sdk.threads.list({
+        archived: true,
+        includeHidden: true,
+        ...(projectId ? { projectId } : {}),
+        limit: ARCHIVED_PAGE_SIZE,
+        offset,
+      });
+      const rows = Array.isArray(page) ? page : [];
       const threads: ArchivedThreadRow[] = [];
-      let offset = 0;
-      let truncated = false;
-      for (;;) {
-        const page = await bb.sdk.threads.list({
-          archived: true,
-          includeHidden: true,
-          ...(projectId ? { projectId } : {}),
-          limit: pageSize,
-          offset,
-        });
-        if (!Array.isArray(page) || page.length === 0) break;
-        for (const row of page) {
-          if (threads.length >= ARCHIVED_LIST_LIMIT) {
-            truncated = true;
-            break;
-          }
-          try {
-            threads.push(mapArchivedRow(row));
-          } catch {
-            // Skip malformed rows rather than failing the whole archive list.
-          }
+      for (const row of rows) {
+        try {
+          threads.push(mapArchivedRow(row));
+        } catch {
+          // Skip malformed rows rather than failing the whole page.
         }
-        if (truncated || page.length < pageSize) break;
-        offset += page.length;
       }
-      return { threads, truncated };
+      return {
+        threads,
+        pageRows: rows.length,
+        hasMore: rows.length === ARCHIVED_PAGE_SIZE,
+      };
     },
     async unarchive({ threadId }) {
       await bb.sdk.threads.unarchive({ threadId });
-      publishArchivedChanged();
+      publishArchivedChanged({ type: "unarchived", threadId });
       return { ok: true };
     },
     async settle({ threadId }) {
@@ -344,12 +411,12 @@ export default function plugin(bb: BbPluginApi) {
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", ({ thread }) => {
     clear(thread.id);
-    publishArchivedChanged();
+    publishArchivedChanged({ type: "deleted", threadId: thread.id });
   });
-  bb.events.on("thread.archived", () => {
-    publishArchivedChanged();
+  bb.events.on("thread.archived", ({ thread }) => {
+    publishArchivedChanged({ type: "archived", threadId: thread.id });
   });
-  bb.events.on("thread.unarchived", () => {
-    publishArchivedChanged();
+  bb.events.on("thread.unarchived", ({ thread }) => {
+    publishArchivedChanged({ type: "unarchived", threadId: thread.id });
   });
 }

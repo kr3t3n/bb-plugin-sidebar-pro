@@ -181,7 +181,8 @@ describe("ThreadInbox", () => {
               latestAttentionAt: 1,
             },
           ],
-          truncated: false,
+          pageRows: 1,
+          hasMore: false,
         }),
       },
     });
@@ -324,7 +325,8 @@ describe("ThreadInbox", () => {
               latestAttentionAt: 2,
             },
           ],
-          truncated: false,
+          pageRows: 1,
+          hasMore: false,
         }),
       },
     });

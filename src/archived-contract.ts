@@ -44,8 +44,13 @@ export const archivedThreadRowSchema = z.object({
 export type ArchivedThreadRow = z.infer<typeof archivedThreadRowSchema>;
 
 /**
- * Soft ceiling so a pathological archive cannot blow the RPC. Normal fleets
- * stay well under this; Hide/Only label filters need the full set because the
- * newest page is often all automations.
+ * Rows per archive page. The view loads more pages as you scroll, or while a
+ * filter leaves less than a screen of matches.
  */
-export const ARCHIVED_LIST_LIMIT = 10_000;
+export const ARCHIVED_PAGE_SIZE = 200;
+
+/** Realtime payload on ARCHIVED_CHANNEL. */
+export type ArchivedChange =
+  | { type: "archived"; threadId: string }
+  | { type: "unarchived"; threadId: string }
+  | { type: "deleted"; threadId: string };

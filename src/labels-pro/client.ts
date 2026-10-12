@@ -8,13 +8,16 @@
 
 import {
   LABELS_PRO_PLUGIN_ID,
+  type LabelChanges,
   type LabelsProLabel,
+  type ListAssignmentsResult,
   type ListLabelsResult,
   type ListThreadsByLabelResult,
 } from "./contract";
 
 export class LabelsProUnavailableError extends Error {
-  readonly code: "unavailable" | "http" | "rpc";
+  /** `unknown_method`: Labels Pro runs, but is an older build. */
+  readonly code: "unavailable" | "http" | "rpc" | "unknown_method";
 
   constructor(message: string, code: LabelsProUnavailableError["code"]) {
     super(message);
@@ -47,8 +50,20 @@ async function callLabelsProRpc<T>(method: string, input: unknown): Promise<T> {
     throw new LabelsProUnavailableError(message, "unavailable");
   }
 
-  // Missing / disabled plugin typically 404s; treat as graceful absence.
-  if (response.status === 404 || response.status === 503) {
+  // Missing / disabled plugin typically 404s; treat as graceful absence. An
+  // older Labels Pro also answers 404, with code `unknown_method`.
+  if (response.status === 404) {
+    const body = (await response
+      .json()
+      .catch(() => null)) as RpcEnvelope<T> | null;
+    const code =
+      body && typeof body.error === "object" ? body.error?.code : undefined;
+    throw new LabelsProUnavailableError(
+      `labels-pro ${method} unavailable (404)`,
+      code === "unknown_method" ? "unknown_method" : "unavailable",
+    );
+  }
+  if (response.status === 503) {
     throw new LabelsProUnavailableError(
       `labels-pro ${method} unavailable (${response.status})`,
       "unavailable",
@@ -196,4 +211,79 @@ export function snapshotSignature(snapshot: {
     .map(([threadId, ids]) => `${threadId}:${[...ids].sort().join(",")}`)
     .sort();
   return `${labels.join("\n")}\n--\n${assignments.join("\n")}`;
+}
+
+export function listAssignments(
+  sinceRevision: number | null,
+): Promise<ListAssignmentsResult> {
+  return callLabelsProRpc<ListAssignmentsResult>(
+    "listAssignments",
+    sinceRevision === null ? {} : { sinceRevision },
+  );
+}
+
+/** Sort each thread's label ids by label order, so chips keep their places. */
+function sortByLabelOrder(
+  ids: readonly string[],
+  order: ReadonlyMap<string, number>,
+): string[] {
+  return [...ids].sort(
+    (left, right) =>
+      (order.get(left) ?? Number.MAX_SAFE_INTEGER) -
+      (order.get(right) ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
+/** Invert `listAssignments` groups into threadId → label ids. */
+export function assignmentsToMap(
+  labels: readonly LabelsProLabel[],
+  assignments: readonly { labelId: string; threadIds: readonly string[] }[],
+): Map<string, readonly string[]> {
+  const order = new Map(labels.map((label, index) => [label.id, index]));
+  const byThread = new Map<string, string[]>();
+  for (const { labelId, threadIds } of assignments) {
+    if (!order.has(labelId)) continue;
+    for (const threadId of threadIds) {
+      const ids = byThread.get(threadId);
+      if (ids) ids.push(labelId);
+      else byThread.set(threadId, [labelId]);
+    }
+  }
+  const result = new Map<string, readonly string[]>();
+  for (const [threadId, ids] of byThread) {
+    result.set(threadId, sortByLabelOrder(ids, order));
+  }
+  return result;
+}
+
+/**
+ * Apply a Labels Pro change message to the current map. Each entry is the
+ * thread's full current state, so the order messages arrive in does not
+ * matter. Returns the same map when nothing differs, so the list does not
+ * redraw.
+ */
+export function applyLabelChanges(
+  labels: readonly LabelsProLabel[],
+  current: ReadonlyMap<string, readonly string[]>,
+  threads: LabelChanges["threads"],
+): ReadonlyMap<string, readonly string[]> {
+  const order = new Map(labels.map((label, index) => [label.id, index]));
+  let next: Map<string, readonly string[]> | null = null;
+  for (const [threadId, rawIds] of Object.entries(threads)) {
+    const ids = sortByLabelOrder(
+      rawIds.filter((id) => order.has(id)),
+      order,
+    );
+    const before = current.get(threadId) ?? [];
+    if (
+      before.length === ids.length &&
+      before.every((id, index) => id === ids[index])
+    ) {
+      continue;
+    }
+    next ??= new Map(current);
+    if (ids.length === 0) next.delete(threadId);
+    else next.set(threadId, ids);
+  }
+  return next ?? current;
 }

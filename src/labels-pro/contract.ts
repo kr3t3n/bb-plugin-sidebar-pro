@@ -29,3 +29,31 @@ export type ListThreadsByLabelResult = {
   label: LabelsProLabel | null;
   threadIds: string[];
 };
+
+/**
+ * `listAssignments` — every label and assignment in one call (Labels Pro
+ * with the stored revision). With `sinceRevision` equal to the current
+ * revision, `changed` is false and the lists are null.
+ */
+export type ListAssignmentsResult = {
+  revision: number;
+  changed: boolean;
+  labels: LabelsProLabel[] | null;
+  assignments: { labelId: string; threadIds: string[] }[] | null;
+};
+
+/**
+ * Sidebar Pro's own realtime channel for Labels Pro changes. The bb app only
+ * delivers a signal to the plugin that published it, so Labels Pro calls our
+ * server (`labelsProChanged`), and our server republishes here.
+ */
+export const SIDEBAR_LABEL_CHANGES_CHANNEL = "labels-pro-changes";
+
+/** What Labels Pro sends to subscribers; see its docs/rpc-contract.md. */
+export type LabelChanges = {
+  revision: number;
+  /** Full current label ids of each changed thread; [] means none left. */
+  threads: Record<string, string[]>;
+  /** A label itself changed, or the burst was large: reload everything. */
+  labelsChanged: boolean;
+};

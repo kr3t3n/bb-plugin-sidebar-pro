@@ -26,7 +26,6 @@ import { SlimRow } from "./SlimRow";
 import { useLifecycle } from "./useLifecycle";
 import { LinkOriginsProvider } from "./useLinkOrigins";
 import { useArchivedThreads } from "./useArchivedThreads";
-import { ARCHIVED_LIST_LIMIT } from "./archived-contract";
 import {
   countAttentionThreads,
   partitionAutomationAttention,
@@ -59,6 +58,14 @@ import {
 import { useLabelsPro } from "./labels-pro/useLabelsPro";
 import { labelsByThreadId, labelsFor } from "./labels-pro/client";
 import { ShelfRows } from "./ShelfRows";
+
+/**
+ * The archive view loads older pages until the filters leave at least this
+ * many rows, so a narrow filter still fills the screen.
+ */
+const ARCHIVED_FILL_ROWS = 60;
+/** Load the next archive page when the view is this close to its end. */
+const ARCHIVED_LOAD_AHEAD_PX = 1_500;
 
 /** Expected row heights in pixels; rows are measured once they render. */
 const ROW_HEIGHT = { spacious: 76, compact: 32, slim: 32 } as const;
@@ -304,6 +311,40 @@ export function ThreadInbox({
     threads,
   ]);
 
+  // Archived threads load a page at a time. Keep loading while the filters
+  // leave less than a screen of matches, so a narrow filter or a search
+  // still finds older threads.
+  const archivedMatches = showArchived ? pinned.length + inbox.length : 0;
+  const { hasMore: archivedHasMore, loadMore: loadMoreArchived } = archived;
+  useEffect(() => {
+    if (
+      showArchived &&
+      archived.status === "ready" &&
+      archivedHasMore &&
+      !archived.loadingMore &&
+      archivedMatches < ARCHIVED_FILL_ROWS
+    ) {
+      loadMoreArchived();
+    }
+  }, [
+    archived.loadingMore,
+    archived.status,
+    archivedHasMore,
+    archivedMatches,
+    loadMoreArchived,
+    showArchived,
+  ]);
+  const handleListScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (!showArchived || !archivedHasMore) return;
+    const element = event.currentTarget;
+    if (
+      element.scrollHeight - element.scrollTop - element.clientHeight <
+      ARCHIVED_LOAD_AHEAD_PX
+    ) {
+      loadMoreArchived();
+    }
+  };
+
   const scopeLabel =
     scope === ALL_PROJECTS
       ? "All projects"
@@ -488,6 +529,7 @@ export function ThreadInbox({
 
         <div
           ref={scrollRef}
+          onScroll={handleListScroll}
           className="relative min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
         >
           {showArchived && archived.status === "loading" ? (
@@ -513,7 +555,8 @@ export function ThreadInbox({
               Could not load threads.
             </p>
           ) : pinned.length + inbox.length + snoozed.length + settled.length ===
-            0 ? (
+              0 &&
+            !(showArchived && archived.hasMore) ? (
             <p
               role="status"
               className="px-2 py-6 text-center text-xs text-muted-foreground"
@@ -625,13 +668,14 @@ export function ThreadInbox({
                   />
                 </>
               )}
-              {showArchived && archived.truncated ? (
+              {showArchived && archived.hasMore ? (
                 <p
                   role="status"
                   className="px-2 py-2 text-center text-[10px] text-muted-foreground"
                 >
-                  Showing the newest {ARCHIVED_LIST_LIMIT.toLocaleString()}{" "}
-                  archived threads.
+                  {archived.loadingMore
+                    ? "Loading older archived threads…"
+                    : "Scroll for older archived threads."}
                 </p>
               ) : null}
             </>
