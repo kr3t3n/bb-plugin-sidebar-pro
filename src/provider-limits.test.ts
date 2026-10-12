@@ -51,8 +51,9 @@ describe("normalizeProviderLimits", () => {
         status: "ok",
         planLabel: "Max (5x)",
         windows: [
-          { label: "Current session", usedPercent: 100, resetsAt: null },
-          { label: "Weekly limit", usedPercent: 15, resetsAt: null },
+          { kind: "five-hour", label: "Current session", usedPercent: 100, resetsAt: null },
+          { kind: "weekly", label: "Weekly limit", usedPercent: 15, resetsAt: null },
+          { kind: "weekly", label: "Fable", model: "fable", usedPercent: 40, resetsAt: null },
         ],
       },
       "acp-cursor": { status: "unauthenticated" },
@@ -65,6 +66,10 @@ describe("normalizeProviderLimits", () => {
       "acp-cursor",
     ]);
     expect(providers[0]?.windows[0]?.remainingPercent).toBe(11);
+    expect(providers[1]?.windows.map((window) => window.label)).toEqual([
+      "Current session",
+      "Weekly limit",
+    ]);
     expect(providers[1]?.windows.map((window) => window.remainingPercent)).toEqual([
       0, 85,
     ]);

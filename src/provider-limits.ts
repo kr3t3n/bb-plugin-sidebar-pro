@@ -100,7 +100,18 @@ function readPlanLabel(value: unknown): string | null {
   return label.length > 0 ? label : null;
 }
 
-function readWindows(value: unknown): ProviderLimitWindow[] {
+/** Anthropic rail shows the 5-hour window and the weekly window, not Fable. */
+function keepClaudeWindow(row: Record<string, unknown>, label: string): boolean {
+  const model = typeof row.model === "string" ? row.model : "";
+  if (model.toLowerCase() === "fable" || /\bfable\b/i.test(label)) return false;
+  const kind = typeof row.kind === "string" ? row.kind : "";
+  if (kind === "five-hour" || kind === "weekly") return true;
+  return /^(current session|five-hour limit|5-hour limit|5 hours|weekly limit|weekly)\b/i.test(
+    label,
+  );
+}
+
+function readWindows(value: unknown, providerId: string): ProviderLimitWindow[] {
   if (!Array.isArray(value)) return [];
   const windows: ProviderLimitWindow[] = [];
   for (const item of value) {
@@ -109,6 +120,7 @@ function readWindows(value: unknown): ProviderLimitWindow[] {
     const row = item as Record<string, unknown>;
     const label = typeof row.label === "string" ? row.label.trim() : "";
     if (label.length === 0) continue;
+    if (providerId === "claude-code" && !keepClaudeWindow(row, label)) continue;
     const used = finiteNumber(row.usedPercent);
     const resetsAt = typeof row.resetsAt === "string" ? row.resetsAt : null;
     windows.push({
@@ -142,7 +154,7 @@ export function normalizeProviderLimits(raw: unknown): ProviderLimit[] {
       };
     }
     const row = block as Record<string, unknown>;
-    const windows = row.status === "ok" ? readWindows(row.windows) : [];
+    const windows = row.status === "ok" ? readWindows(row.windows, provider.id) : [];
     const usable = windows.some((window) => window.remainingPercent !== null);
     return {
       providerId: provider.id,

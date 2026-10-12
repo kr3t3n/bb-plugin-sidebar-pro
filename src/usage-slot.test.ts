@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
+import { releaseRailDock } from "./rail-dock";
 import {
   SIDEBAR_TOGGLE_SELECTOR,
   USAGE_SCREEN_PATH,
   USAGE_SLOT_ATTR,
   USAGE_SLOT_OWN_ROW_ATTR,
+  USAGE_SLOT_RAIL_ATTR,
   ensureUsageSlot,
   openUsageScreen,
   sidebarToggleClearancePx,
@@ -68,6 +70,52 @@ describe("ensureUsageSlot", () => {
     mockRect(button, { left: 84, right: 112, top: 0, bottom: 28 });
     syncUsageSlotPadding(slot);
     expect(slot.style.getPropertyValue("--sidebar-pro-usage-pad")).toBe("");
+  });
+
+  it("puts New thread, the figures, and the arrows in the nav rail", () => {
+    document.body.innerHTML = `
+      <div data-testid="app-nav-rail">
+        <nav>
+          <div data-testid="home"></div>
+          <div id="settings"><button type="button" aria-label="Settings"></button></div>
+        </nav>
+      </div>
+      <div data-testid="app-sidebar-body">
+        <div data-testid="app-sidebar-top-reserve-row">
+          <div data-testid="nav-rail-header"><button type="button">New thread</button></div>
+          <div id="history">
+            <button type="button" aria-label="Go back"></button>
+            <button type="button" aria-label="Go forward"></button>
+          </div>
+        </div>
+      </div>
+    `;
+    const slot = ensureUsageSlot(document);
+    const dock = document.querySelector("[data-sidebar-pro-rail-dock]");
+    const row = document.querySelector('[data-testid="app-sidebar-top-reserve-row"]');
+    expect(slot).not.toBeNull();
+    expect(dock).not.toBeNull();
+    expect(document.querySelector("nav")?.firstElementChild).toBe(dock);
+    expect([...dock!.children]).toEqual([
+      document.querySelector('[data-testid="nav-rail-header"]'),
+      document.getElementById("history"),
+    ]);
+    expect(slot?.nextElementSibling?.id).toBe("settings");
+    expect(slot?.hasAttribute(USAGE_SLOT_RAIL_ATTR)).toBe(true);
+    expect(slot?.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR)).toBe(false);
+    expect(row?.hasAttribute("data-sidebar-pro-rail-collapsed")).toBe(true);
+    expect(ensureUsageSlot(document)).toBe(slot);
+    expect(slot?.nextElementSibling?.id).toBe("settings");
+    expect([...dock!.children]).toEqual([
+      document.querySelector('[data-testid="nav-rail-header"]'),
+      document.getElementById("history"),
+    ]);
+
+    releaseRailDock(document);
+    expect(document.querySelector("[data-sidebar-pro-rail-dock]")).toBeNull();
+    expect(row?.firstElementChild?.getAttribute("data-testid")).toBe("nav-rail-header");
+    expect(row?.querySelector('[aria-label="Go back"]')).not.toBeNull();
+    expect(row?.hasAttribute("data-sidebar-pro-rail-collapsed")).toBe(false);
   });
 
   it("returns null when the top row is missing", () => {

@@ -3,17 +3,25 @@ import {
   providerLimitsResultSchema,
   type ProviderLimit,
 } from "./provider-limits";
+import {
+  RAIL_SELECTOR,
+  releaseRailDock,
+  settingsAnchor,
+  syncRailChrome,
+} from "./rail-dock";
 import { renderUsageCard, renderUsageMeters } from "./usage-meter";
 
 export const USAGE_ROW_SELECTOR = '[data-testid="app-sidebar-top-reserve-row"]';
 export const USAGE_SLOT_ATTR = "data-sidebar-pro-usage-slot";
 export const USAGE_SLOT_EVENT = "sidebar-pro-usage-slot";
 /**
- * bb 0.46 puts the New thread button in the top row. That row then has no
- * room for the figures, so they move to their own row below it.
+ * bb 0.46 puts the New thread button in the top row. Without a nav rail,
+ * the figures move to their own row below that button.
  */
 export const NAV_RAIL_HEADER_SELECTOR = '[data-testid="nav-rail-header"]';
 export const USAGE_SLOT_OWN_ROW_ATTR = "data-sidebar-pro-usage-own-row";
+/** Set when the figures sit in the nav rail instead of the sidebar row. */
+export const USAGE_SLOT_RAIL_ATTR = "data-sidebar-pro-usage-rail";
 
 export const USAGE_CARD_ID = "sidebar-pro-usage-card";
 /** The settings page of the built-in Provider usage plugin. */
@@ -60,6 +68,33 @@ const SLOT_CSS = `
   margin: 0;
   padding: 2px 12px 6px;
   overflow: hidden;
+}
+[${USAGE_SLOT_ATTR}][${USAGE_SLOT_RAIL_ATTR}] {
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+}
+[${USAGE_SLOT_ATTR}][${USAGE_SLOT_RAIL_ATTR}] .meter {
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 3px 0;
+}
+[${USAGE_SLOT_ATTR}][${USAGE_SLOT_RAIL_ATTR}] svg {
+  width: 18px;
+  height: 18px;
+}
+[${USAGE_SLOT_ATTR}][${USAGE_SLOT_RAIL_ATTR}] .pcts {
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12px;
+  line-height: 1.15;
 }
 [${USAGE_SLOT_ATTR}] .meter {
   display: inline-flex;
@@ -159,9 +194,23 @@ const SLOT_CSS = `
 #${USAGE_CARD_ID} .fill-unknown { background: var(--muted-foreground); }
 `;
 
+/** Sit the figures in the rail, directly above the Settings button. */
+function placeUsageAboveSettings(nav: HTMLElement, slot: HTMLElement): boolean {
+  const anchor = settingsAnchor(nav);
+  if (anchor !== null) {
+    if (slot.nextSibling === anchor) return false;
+    anchor.before(slot);
+    return true;
+  }
+  if (slot.parentElement === nav && nav.lastElementChild === slot) return false;
+  nav.append(slot);
+  return true;
+}
+
 export function ensureUsageSlot(root: ParentNode = document): HTMLElement | null {
+  const dock = syncRailChrome(root);
   const row = root.querySelector<HTMLElement>(USAGE_ROW_SELECTOR);
-  if (row === null) return null;
+  if (dock === null && row === null) return null;
 
   const doc = root instanceof Document ? root : document;
   let slot = doc.querySelector<HTMLElement>(`[${USAGE_SLOT_ATTR}]`);
@@ -171,19 +220,38 @@ export function ensureUsageSlot(root: ParentNode = document): HTMLElement | null
     slot.setAttribute(USAGE_SLOT_ATTR, "");
     changed = true;
   }
-  const ownRow = row.querySelector(NAV_RAIL_HEADER_SELECTOR) !== null;
-  if (ownRow) {
-    if (slot.previousElementSibling !== row) {
-      row.after(slot);
+
+  const nav = dock?.parentElement;
+  if (dock !== null && nav instanceof HTMLElement) {
+    if (placeUsageAboveSettings(nav, slot)) changed = true;
+    if (slot.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR)) {
+      slot.removeAttribute(USAGE_SLOT_OWN_ROW_ATTR);
       changed = true;
     }
-  } else if (slot.parentElement !== row || row.firstElementChild !== slot) {
-    row.insertBefore(slot, row.firstChild);
-    changed = true;
+    if (!slot.hasAttribute(USAGE_SLOT_RAIL_ATTR)) {
+      slot.setAttribute(USAGE_SLOT_RAIL_ATTR, "");
+      changed = true;
+    }
+  } else if (row !== null) {
+    if (slot.hasAttribute(USAGE_SLOT_RAIL_ATTR)) {
+      slot.removeAttribute(USAGE_SLOT_RAIL_ATTR);
+      changed = true;
+    }
+    const ownRow = row.querySelector(NAV_RAIL_HEADER_SELECTOR) !== null;
+    if (ownRow) {
+      if (slot.previousElementSibling !== row) {
+        row.after(slot);
+        changed = true;
+      }
+    } else if (slot.parentElement !== row || row.firstElementChild !== slot) {
+      row.insertBefore(slot, row.firstChild);
+      changed = true;
+    }
+    if (slot.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR) !== ownRow) {
+      slot.toggleAttribute(USAGE_SLOT_OWN_ROW_ATTR, ownRow);
+    }
   }
-  if (slot.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR) !== ownRow) {
-    slot.toggleAttribute(USAGE_SLOT_OWN_ROW_ATTR, ownRow);
-  }
+
   if (changed) doc.dispatchEvent(new CustomEvent(USAGE_SLOT_EVENT));
   return slot;
 }
@@ -215,10 +283,11 @@ export function sidebarToggleClearancePx(
 
 /** Keep the browser padding, and grow it when the toggle sits further right. */
 export function syncUsageSlotPadding(slot: HTMLElement, root: ParentNode = document): void {
-  // On its own row the slot sits below the toggle. No clearance applies.
-  const clearance = slot.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR)
-    ? null
-    : sidebarToggleClearancePx(slot, root);
+  // On its own row, or in the rail, the slot does not cross the toggle.
+  const clearance =
+    slot.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR) || slot.hasAttribute(USAGE_SLOT_RAIL_ATTR)
+      ? null
+      : sidebarToggleClearancePx(slot, root);
   if (clearance === null) {
     slot.style.removeProperty(USAGE_PAD_VAR);
     return;
@@ -239,11 +308,19 @@ export function openUsageScreen(win: Window = window): void {
   win.dispatchEvent(new PopStateEvent("popstate", { state: win.history.state }));
 }
 
-/** Place the card below the meter and keep it inside the window. */
+/** Place the card beside a rail meter, or below a sidebar meter, inside the window. */
 export function placeUsageCard(card: HTMLElement, anchor: HTMLElement, win: Window = window): void {
   const anchorRect = anchor.getBoundingClientRect();
   const cardRect = card.getBoundingClientRect();
   const maxLeft = Math.max(CARD_EDGE_PX, win.innerWidth - cardRect.width - CARD_EDGE_PX);
+  const maxTop = Math.max(CARD_EDGE_PX, win.innerHeight - cardRect.height - CARD_EDGE_PX);
+  if (anchor.closest(RAIL_SELECTOR) !== null) {
+    const left = Math.min(Math.max(CARD_EDGE_PX, anchorRect.right + CARD_GAP_PX), maxLeft);
+    const top = Math.min(Math.max(CARD_EDGE_PX, anchorRect.top), maxTop);
+    card.style.left = `${Math.round(left)}px`;
+    card.style.top = `${Math.round(top)}px`;
+    return;
+  }
   const left = Math.min(Math.max(CARD_EDGE_PX, anchorRect.left), maxLeft);
   card.style.left = `${Math.round(left)}px`;
   card.style.top = `${Math.round(anchorRect.bottom + CARD_GAP_PX)}px`;
@@ -410,6 +487,7 @@ export function mountUsageSlot(signal: AbortSignal, pluginId: string): void {
     doc.removeEventListener("keydown", onKey);
     observer.disconnect();
     card.remove();
+    releaseRailDock(doc);
     doc.getElementById(STYLE_ID)?.remove();
     doc.querySelector(`[${USAGE_SLOT_ATTR}]`)?.remove();
   };

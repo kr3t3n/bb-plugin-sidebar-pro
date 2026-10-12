@@ -318,7 +318,7 @@ export function ThreadInbox({
   return (
     <LinkOriginsProvider>
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-col gap-0.5 px-2 pb-1">
+        <div className="flex shrink-0 flex-col gap-0.5 px-2 pb-1 pt-3">
           <div className="flex items-center gap-1">
             <Select value={scope} onValueChange={setScope}>
               <SelectTrigger
