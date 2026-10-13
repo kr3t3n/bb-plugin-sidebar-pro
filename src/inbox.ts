@@ -255,14 +255,22 @@ export function parentOf(
   return threads.find((candidate) => candidate.id === parentThreadId) ?? null;
 }
 
-/** The children of one thread, oldest first (the order they were spawned). */
+/**
+ * The children of one thread: running ones on top, then the rest. Each group
+ * stays oldest first (the order they were spawned).
+ */
 export function childrenOf(
   threads: readonly PluginSidebarThread[],
   parentThreadId: string,
 ): PluginSidebarThread[] {
   return threads
     .filter((thread) => thread.parentThreadId === parentThreadId)
-    .sort((left, right) => left.createdAt - right.createdAt);
+    .sort(
+      (left, right) =>
+        Number(WORKING_INDICATORS.has(right.indicator)) -
+          Number(WORKING_INDICATORS.has(left.indicator)) ||
+        left.createdAt - right.createdAt,
+    );
 }
 
 export interface ListFilters {

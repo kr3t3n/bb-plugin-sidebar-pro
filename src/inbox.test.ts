@@ -286,6 +286,34 @@ describe("child threads", () => {
     );
     expect(children.map((t) => t.id)).toEqual(["a", "b"]);
   });
+
+  it("lists running children first, each group oldest first", () => {
+    const children = childrenOf(
+      [
+        thread({ id: "idle-old", parentThreadId: "parent", createdAt: 10 }),
+        thread({
+          id: "running-new",
+          parentThreadId: "parent",
+          createdAt: 40,
+          indicator: "working-draft",
+        }),
+        thread({ id: "idle-new", parentThreadId: "parent", createdAt: 30 }),
+        thread({
+          id: "running-old",
+          parentThreadId: "parent",
+          createdAt: 20,
+          indicator: "background-agent",
+        }),
+      ],
+      "parent",
+    );
+    expect(children.map((t) => t.id)).toEqual([
+      "running-old",
+      "running-new",
+      "idle-old",
+      "idle-new",
+    ]);
+  });
 });
 
 describe("parentOf", () => {

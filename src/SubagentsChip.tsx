@@ -62,15 +62,18 @@ export function SubagentsChip({
           <div
             role="menu"
             aria-label="Child threads"
-            className="absolute right-0 top-9 z-50 w-80 overflow-hidden rounded-xl border border-border bg-popover shadow-lg"
+            className="absolute right-0 top-9 z-50 flex w-80 flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-lg"
+            // Cap the panel below the header row so a long family scrolls
+            // inside the list instead of running off the bottom of the window.
+            style={{ maxHeight: "min(32rem, calc(100vh - 6rem))" }}
           >
-            <div className="flex items-center gap-2 px-3 pb-1 pt-2.5">
+            <div className="flex shrink-0 items-center gap-2 px-3 pb-1 pt-2.5">
               <span className="text-xs font-semibold">Children</span>
               <span className="ml-auto text-2xs text-muted-foreground">
                 {children.length}
               </span>
             </div>
-            <ul className="flex flex-col gap-px p-1.5 pt-0.5">
+            <ul className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto overscroll-contain p-1.5 pt-0.5">
               {children.map((child) => (
                 <li key={child.id} className="list-none">
                   <button
