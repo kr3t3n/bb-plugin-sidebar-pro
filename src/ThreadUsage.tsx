@@ -61,7 +61,7 @@ export function ThreadUsageProvider({
   return <UsageContext.Provider value={usage}>{children}</UsageContext.Provider>;
 }
 
-export function ThreadUsageLabel({ thread }: { thread: PluginSidebarThread }) {
+export function ThreadUsageBadge({ thread }: { thread: PluginSidebarThread }) {
   const usage = useContext(UsageContext);
   const tooltipId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -101,7 +101,8 @@ export function ThreadUsageLabel({ thread }: { thread: PluginSidebarThread }) {
       ref={buttonRef}
       type="button"
       data-thread-usage-limit=""
-      className="pointer-events-auto relative inline-flex shrink-0 items-center gap-1 rounded border border-amber-400/30 bg-amber-400/10 px-1 py-0.5 text-2xs leading-none text-amber-500 dark:text-amber-300"
+      data-provider-usage-badge=""
+      className="pointer-events-auto relative inline-flex h-4 w-3 shrink-0 items-center justify-center rounded-sm border-0 bg-transparent p-0 text-amber-500 dark:text-amber-300"
       aria-label={limit.detail}
       aria-describedby={anchor === null ? undefined : tooltipId}
       onPointerEnter={showDetails}
@@ -111,10 +112,9 @@ export function ThreadUsageLabel({ thread }: { thread: PluginSidebarThread }) {
       onClick={(event) => { event.stopPropagation(); showDetails(); }}
       onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setAnchor(null); } }}
     >
-      <svg aria-hidden="true" viewBox="0 0 16 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-2.5 w-2">
+      <svg aria-hidden="true" viewBox="0 0 16 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-2 w-1.5">
         <path d="M3 2h10M3 18h10M4 2v4c0 2 2 3 4 4-2 1-4 2-4 4v4M12 2v4c0 2-2 3-4 4 2 1 4 2 4 4v4" />
       </svg>
-      Limit
     </button>
     {anchor !== null && createPortal(
       <span

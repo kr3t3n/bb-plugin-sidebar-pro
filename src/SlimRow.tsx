@@ -7,6 +7,8 @@ import { Icon } from "./components/Icon";
 import { cn } from "./lib/utils";
 import { RowContextMenu } from "./RowContextMenu";
 import { RowOverflowMenu } from "./RowOverflowMenu";
+import { ProviderGlyph } from "./ProviderGlyph";
+import { ThreadUsageBadge } from "./ThreadUsage";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "./StatusSlot";
 import { TitleEditor } from "./TitleEditor";
 import { threadDisplayTitle } from "./inbox";
@@ -71,6 +73,10 @@ export function SlimRow({
               isRenaming && "pointer-events-none",
             )}
           />
+          <span className="inline-flex shrink-0 items-center gap-0.5">
+            <ProviderGlyph providerId={thread.providerId} />
+            <ThreadUsageBadge thread={thread} />
+          </span>
           {isRenaming ? (
             <TitleEditor
               initialTitle={title}
@@ -92,7 +98,6 @@ export function SlimRow({
               {title}
             </span>
           )}
-          <ThreadUsageLabel thread={thread} />
           {/* The same slot as a card, so a shelf keeps the card's column. A
               snoozed row spends it on the wake time: when the thread comes
               BACK is that shelf's whole question, and it outranks an age the

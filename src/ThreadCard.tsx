@@ -11,7 +11,7 @@ import { RowContextMenu } from "./RowContextMenu";
 import { RowOverflowMenu } from "./RowOverflowMenu";
 import { LabelChips } from "./LabelChips";
 import { ProviderGlyph } from "./ProviderGlyph";
-import { ThreadUsageLabel } from "./ThreadUsage";
+import { ThreadUsageBadge } from "./ThreadUsage";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "./StatusSlot";
 import { TitleEditor } from "./TitleEditor";
 import { threadDisplayTitle } from "./inbox";
@@ -141,6 +141,10 @@ export const ThreadCard = memo(function ThreadCard({
           />
           {compact ? (
             <div className="pointer-events-none relative flex h-5 items-center gap-1.5">
+              <span className="inline-flex shrink-0 items-center gap-0.5">
+                <ProviderGlyph providerId={thread.providerId} />
+                <ThreadUsageBadge thread={thread} />
+              </span>
               {isRenaming ? (
                 <TitleEditor
                   initialTitle={title}
@@ -158,7 +162,6 @@ export const ThreadCard = memo(function ThreadCard({
                   {title}
                 </span>
               )}
-              <ThreadUsageLabel thread={thread} />
               <LabelChips labels={labels} compact />
               <span className="pointer-events-auto relative flex items-center gap-0.5">
                 {canPark ? (
@@ -197,7 +200,6 @@ export const ThreadCard = memo(function ThreadCard({
               >
                 <StatusOrTime thread={thread} now={now} />
               </span>
-              <ProviderGlyph providerId={thread.providerId} />
             </div>
           ) : (
             <>
@@ -254,6 +256,10 @@ export const ThreadCard = memo(function ThreadCard({
                   thread.isUnread && "font-medium",
                 )}
               >
+                <span className="inline-flex shrink-0 items-center gap-0.5">
+                  <ProviderGlyph providerId={thread.providerId} />
+                  <ThreadUsageBadge thread={thread} />
+                </span>
                 {isRenaming ? (
                   <TitleEditor
                     initialTitle={title}
@@ -264,7 +270,6 @@ export const ThreadCard = memo(function ThreadCard({
                 ) : (
                   <span className="min-w-0 flex-1 truncate">{title}</span>
                 )}
-                <ThreadUsageLabel thread={thread} />
               </div>
               <div className="pointer-events-none relative mt-0.5 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground">
                 {/* A thread without a worktree still runs somewhere, so the
@@ -295,8 +300,6 @@ export const ThreadCard = memo(function ThreadCard({
                   />
                 ) : null}
                 <PullRequestLink threadId={thread.id} />
-                {/* Always drawn, so the line has a fixed right edge. */}
-                <ProviderGlyph providerId={thread.providerId} />
               </div>
             </>
           )}

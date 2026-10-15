@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import { ThreadUsageLabel, ThreadUsageProvider } from "./ThreadUsage";
+import { ThreadUsageBadge, ThreadUsageProvider } from "./ThreadUsage";
 
 const thread = (id: string, hostId: string | null): PluginSidebarThread => ({
   id, providerId: "claude-code", host: hostId === null ? null : { id: hostId, name: hostId },
@@ -13,12 +13,12 @@ const payload = (usedPercent = 100, resetsAt: string | null = null) => ({
 const response = (body: object) => Promise.resolve({ ok: true, json: async () => body });
 
 function Rows({ threads }: { threads: PluginSidebarThread[] }) {
-  return <ThreadUsageProvider threads={threads}>{threads.map((t) => <ThreadUsageLabel key={t.id} thread={t} />)}</ThreadUsageProvider>;
+  return <ThreadUsageProvider threads={threads}>{threads.map((t) => <ThreadUsageBadge key={t.id} thread={t} />)}</ThreadUsageProvider>;
 }
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-describe("thread usage labels", () => {
+describe("thread usage badges", () => {
   it("deduplicates machine reads, isolates machines, and clears recovered limits", async () => {
     let recovered = false;
     const fetch = vi.fn((url: string) => response(payload(url.includes("hostId=h1") && !recovered ? 100 : 20)));
