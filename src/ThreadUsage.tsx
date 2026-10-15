@@ -102,7 +102,7 @@ export function ThreadUsageBadge({ thread }: { thread: PluginSidebarThread }) {
       type="button"
       data-thread-usage-limit=""
       data-provider-usage-badge=""
-      className="pointer-events-auto relative inline-flex h-4 w-3 shrink-0 items-center justify-center rounded-sm border-0 bg-transparent p-0 text-amber-500 dark:text-amber-300"
+      className="pointer-events-auto absolute -right-1 -top-1.5 inline-flex h-4 w-3 shrink-0 items-center justify-center rounded-sm border-0 bg-transparent p-0 text-amber-500 dark:text-amber-300"
       aria-label={limit.detail}
       aria-describedby={anchor === null ? undefined : tooltipId}
       onPointerEnter={showDetails}

@@ -73,7 +73,7 @@ export function SlimRow({
               isRenaming && "pointer-events-none",
             )}
           />
-          <span className="inline-flex shrink-0 items-center gap-0.5">
+          <span className="relative inline-flex size-3.5 shrink-0 items-center justify-center">
             <ProviderGlyph providerId={thread.providerId} />
             <ThreadUsageBadge thread={thread} />
           </span>
