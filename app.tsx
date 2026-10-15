@@ -9,6 +9,7 @@ import { ThreadInbox } from "./src/ThreadInbox";
 import { ParentChip } from "./src/ParentChip";
 import { SubagentsChip } from "./src/SubagentsChip";
 import { mountSearchSlot } from "./src/search-slot";
+import { mountRailReorder } from "./src/rail-reorder";
 import { mountUsageSlot } from "./src/usage-slot";
 
 export default definePluginApp((app) => {
@@ -23,6 +24,13 @@ export default definePluginApp((app) => {
     id: "provider-limit-slot",
     mount({ signal, pluginId }) {
       mountUsageSlot(signal, pluginId);
+    },
+  });
+
+  app.contentScripts.register({
+    id: "rail-reorder",
+    mount({ signal }) {
+      mountRailReorder(signal);
     },
   });
 

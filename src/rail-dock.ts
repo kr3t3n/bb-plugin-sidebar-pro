@@ -123,12 +123,12 @@ export function syncRailChrome(root: ParentNode = document): HTMLElement | null 
 
   const history = historyCluster(root);
   if (history !== null) {
-    history.setAttribute(HISTORY_CLUSTER_ATTR, "");
+    if (!history.hasAttribute(HISTORY_CLUSTER_ATTR)) history.setAttribute(HISTORY_CLUSTER_ATTR, "");
     if (history.parentElement !== dock) dock.append(history);
   }
 
   if (row !== null && header !== null && dock.contains(header)) {
-    row.setAttribute(TOP_ROW_COLLAPSED_ATTR, "");
+    if (!row.hasAttribute(TOP_ROW_COLLAPSED_ATTR)) row.setAttribute(TOP_ROW_COLLAPSED_ATTR, "");
   }
   return dock;
 }

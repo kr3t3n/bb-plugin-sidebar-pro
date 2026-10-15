@@ -81,3 +81,37 @@ behave like upstream T3.
 See the shared checklist in the
 [Labels Pro README](https://github.com/kr3t3n/bb-plugin-labels-pro#manual-test-checklist-pro-stack):
 auto-tag → filter/hide → mark filtered read → muted notifications → header edit.
+
+## Rail placement
+
+`src/rail-layout.ts` is the shared rail contract. Keep its source identical in
+Health Rail, Sidebar Pro, Thread widget, and Automation Provider. Their bundles use one
+window coordinator through `Symbol.for("bb.local.rail-layout.v2")`.
+
+The order is health, usage, Thread widget, Automation Provider, then Settings.
+Plugins attach their owned elements and register refresh callbacks. They must
+not enforce separate neighbor rules or observe the whole document for placement.
+The coordinator observes direct rail children, disconnects during its own writes,
+and checks for replacement rails twice per second. Repeated mounts replace and
+dispose the previous generation. The last unmount stops all layout scheduling.
+
+`src/rail-reorder.test.ts` covers saved ordering, gesture handling, cleanup, and
+widget indicator placement. When changing the shared contract, also verify it
+with Health Rail, Thread widget, and Automation Provider.
+
+## Rail reordering
+
+Drag a rail icon vertically and drop it at the highlighted line. You can move
+app shortcuts, Home, More, Settings, the widget, health, automation status, and
+each provider usage icon. On touch screens, hold an icon briefly before dragging.
+Focus an icon and use Alt+Up or Alt+Down to move it with the keyboard. Escape
+cancels a drag. A horizontal drag keeps BB's existing split-view action.
+
+The order is saved in this browser under `bb.local.rail-order.v1`. Hidden or
+disabled items keep their saved positions when they return. Other windows in
+the same browser apply changes through storage events.
+
+`src/rail-reorder.ts` uses the shared rail coordinator's refresh cycle. It orders
+CSS flex items and keeps host DOM nodes under their original React parents.
+It adds no document observer and performs no DOM writes on an unchanged rail.
+Widget header indicators retain their existing layout.

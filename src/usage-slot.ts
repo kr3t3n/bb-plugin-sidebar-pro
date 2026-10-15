@@ -1,3 +1,4 @@
+import { indicatorHost, mountLatest, orderRail, watchRail } from "./rail-layout";
 import {
   emptyProviderLimits,
   providerLimitsResultSchema,
@@ -6,7 +7,6 @@ import {
 import {
   RAIL_SELECTOR,
   releaseRailDock,
-  settingsAnchor,
   syncRailChrome,
 } from "./rail-dock";
 import { renderUsageCard, renderUsageMeters } from "./usage-meter";
@@ -194,23 +194,19 @@ const SLOT_CSS = `
 #${USAGE_CARD_ID} .fill-unknown { background: var(--muted-foreground); }
 `;
 
-/** Sit the figures in the rail, directly above the Settings button. */
+/** The coordinator owns the complete rail order. */
 function placeUsageAboveSettings(nav: HTMLElement, slot: HTMLElement): boolean {
-  const anchor = settingsAnchor(nav);
-  if (anchor !== null) {
-    if (slot.nextSibling === anchor) return false;
-    anchor.before(slot);
-    return true;
-  }
-  if (slot.parentElement === nav && nav.lastElementChild === slot) return false;
-  nav.append(slot);
-  return true;
+  const host = indicatorHost(nav)!;
+  const moved = slot.parentElement !== host;
+  if (moved) host.append(slot);
+  return (host === nav && orderRail(nav)) || moved;
 }
 
 export function ensureUsageSlot(root: ParentNode = document): HTMLElement | null {
   const dock = syncRailChrome(root);
   const row = root.querySelector<HTMLElement>(USAGE_ROW_SELECTOR);
-  if (dock === null && row === null) return null;
+  const header = indicatorHost(null);
+  if (dock === null && row === null && header === null) return null;
 
   const doc = root instanceof Document ? root : document;
   let slot = doc.querySelector<HTMLElement>(`[${USAGE_SLOT_ATTR}]`);
@@ -222,8 +218,8 @@ export function ensureUsageSlot(root: ParentNode = document): HTMLElement | null
   }
 
   const nav = dock?.parentElement;
-  if (dock !== null && nav instanceof HTMLElement) {
-    if (placeUsageAboveSettings(nav, slot)) changed = true;
+  if (header !== null || (dock !== null && nav instanceof HTMLElement)) {
+    if (placeUsageAboveSettings((nav ?? header) as HTMLElement, slot)) changed = true;
     if (slot.hasAttribute(USAGE_SLOT_OWN_ROW_ATTR)) {
       slot.removeAttribute(USAGE_SLOT_OWN_ROW_ATTR);
       changed = true;
@@ -289,10 +285,11 @@ export function syncUsageSlotPadding(slot: HTMLElement, root: ParentNode = docum
       ? null
       : sidebarToggleClearancePx(slot, root);
   if (clearance === null) {
-    slot.style.removeProperty(USAGE_PAD_VAR);
+    if (slot.style.getPropertyValue(USAGE_PAD_VAR)) slot.style.removeProperty(USAGE_PAD_VAR);
     return;
   }
-  slot.style.setProperty(USAGE_PAD_VAR, `max(${USAGE_PAD_FALLBACK}, ${clearance}px)`);
+  const value = `max(${USAGE_PAD_FALLBACK}, ${clearance}px)`;
+  if (slot.style.getPropertyValue(USAGE_PAD_VAR) !== value) slot.style.setProperty(USAGE_PAD_VAR, value);
 }
 
 /**
@@ -353,6 +350,10 @@ export async function fetchProviderLimits(
 }
 
 export function mountUsageSlot(signal: AbortSignal, pluginId: string): void {
+  mountLatest("sidebar-pro-usage", signal, (ownedSignal) => mountUsage(ownedSignal, pluginId));
+}
+
+function mountUsage(signal: AbortSignal, pluginId: string): void {
   const doc = document;
   if (doc.getElementById(STYLE_ID) === null) {
     const style = doc.createElement("style");
@@ -362,7 +363,6 @@ export function mountUsageSlot(signal: AbortSignal, pluginId: string): void {
   }
 
   let latest = emptyProviderLimits();
-  let timer: number | null = null;
   let hovered: HTMLElement | null = null;
 
   const card = doc.createElement("div");
@@ -460,22 +460,11 @@ export function mountUsageSlot(signal: AbortSignal, pluginId: string): void {
   refresh();
   const poll = window.setInterval(refresh, POLL_MS);
 
-  const schedule = () => {
-    if (signal.aborted) return;
-    if (timer !== null) window.clearTimeout(timer);
-    timer = window.setTimeout(() => {
-      timer = null;
-      refill();
-    }, 50);
-  };
-
-  const observer = new MutationObserver(schedule);
-  observer.observe(doc.documentElement, { childList: true, subtree: true });
+  watchRail("sidebar-pro-usage", signal, refill);
   window.addEventListener("resize", refill);
   const frame = window.requestAnimationFrame(refill);
 
   const onAbort = () => {
-    if (timer !== null) window.clearTimeout(timer);
     window.clearInterval(poll);
     window.cancelAnimationFrame(frame);
     window.removeEventListener("resize", refill);
@@ -485,7 +474,6 @@ export function mountUsageSlot(signal: AbortSignal, pluginId: string): void {
     doc.removeEventListener("focusout", onOut);
     doc.removeEventListener("click", onClick);
     doc.removeEventListener("keydown", onKey);
-    observer.disconnect();
     card.remove();
     releaseRailDock(doc);
     doc.getElementById(STYLE_ID)?.remove();
