@@ -49,7 +49,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.3.0",
-    "bb-app": "0.37.0",
+    "bb-app": "0.46.1",
     "better-sqlite3": "12.10.0",
     "jsdom": "^29.0.1",
     "react": "^19.0.0",
