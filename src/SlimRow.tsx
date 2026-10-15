@@ -92,6 +92,7 @@ export function SlimRow({
               {title}
             </span>
           )}
+          <ThreadUsageLabel thread={thread} />
           {/* The same slot as a card, so a shelf keeps the card's column. A
               snoozed row spends it on the wake time: when the thread comes
               BACK is that shelf's whole question, and it outranks an age the

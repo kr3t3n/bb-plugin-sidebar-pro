@@ -11,6 +11,7 @@ import { RowContextMenu } from "./RowContextMenu";
 import { RowOverflowMenu } from "./RowOverflowMenu";
 import { LabelChips } from "./LabelChips";
 import { ProviderGlyph } from "./ProviderGlyph";
+import { ThreadUsageLabel } from "./ThreadUsage";
 import { STATUS_SLOT_CLASS, StatusOrTime } from "./StatusSlot";
 import { TitleEditor } from "./TitleEditor";
 import { threadDisplayTitle } from "./inbox";
@@ -157,6 +158,7 @@ export const ThreadCard = memo(function ThreadCard({
                   {title}
                 </span>
               )}
+              <ThreadUsageLabel thread={thread} />
               <LabelChips labels={labels} compact />
               <span className="pointer-events-auto relative flex items-center gap-0.5">
                 {canPark ? (
@@ -248,21 +250,21 @@ export const ThreadCard = memo(function ThreadCard({
                   // Weight alone carries unread. Fading the title — or the whole
                   // card — makes a thread at rest read as disabled, and at rest is
                   // what most of the list is most of the time.
-                  "pointer-events-none relative mt-0.5 text-sm text-foreground",
-                  !isRenaming && "truncate",
+                  "pointer-events-none relative mt-0.5 flex items-center gap-1.5 text-sm text-foreground",
                   thread.isUnread && "font-medium",
                 )}
               >
                 {isRenaming ? (
                   <TitleEditor
                     initialTitle={title}
-                    className="h-5 text-sm"
+                    className="h-5 min-w-0 flex-1 text-sm"
                     onCommit={finishRename}
                     onCancel={() => setIsRenaming(false)}
                   />
                 ) : (
-                  title
+                  <span className="min-w-0 flex-1 truncate">{title}</span>
                 )}
+                <ThreadUsageLabel thread={thread} />
               </div>
               <div className="pointer-events-none relative mt-0.5 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground">
                 {/* A thread without a worktree still runs somewhere, so the
