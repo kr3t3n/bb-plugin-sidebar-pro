@@ -616,7 +616,7 @@ describe("row context menu", () => {
       "Open in split",
       "Copy thread ID",
       "Copy local link",
-      "Copy cloud link",
+      "Copy remote link",
       "Mark unread",
       "Pin",
       "Rename",
@@ -658,7 +658,7 @@ describe("row context menu", () => {
       "Open in split",
       "Copy thread ID",
       "Copy local link",
-      "Copy cloud link",
+      "Copy remote link",
       "Mark unread",
       "Pin",
       "Rename",
@@ -667,7 +667,7 @@ describe("row context menu", () => {
     ]);
   });
 
-  it("copies the thread id, local link, and cloud link", async () => {
+  it("copies the thread id, local link, and remote link", async () => {
     const writes: string[] = [];
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -695,7 +695,7 @@ describe("row context menu", () => {
       ),
     );
 
-    await openAndClick("Copy cloud link");
+    await openAndClick("Copy remote link");
     await waitFor(() =>
       expect(writes).toContain(
         "https://gap.getbb.app/projects/proj_1/threads/thr_copy",

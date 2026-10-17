@@ -66,7 +66,7 @@ export function ThreadMenuItems({
         Copy local link
       </Item>
       <Item surface={surface} onSelect={copyCloud}>
-        Copy cloud link
+        Copy remote link
       </Item>
       <Separator surface={surface} />
       <Item

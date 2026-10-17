@@ -24,7 +24,7 @@ export function threadUrl(
 export type ThreadLinkOrigins = {
   /** Loopback SPA origin, e.g. http://127.0.0.1:38886 */
   localOrigin: string;
-  /** Connect front door when paired, e.g. https://gap.getbb.app; else null */
+  /** Remote origin: BB_APP_URL (e.g. a Tailscale Serve address), else the Connect front door; null when neither is set */
   cloudOrigin: string | null;
 };
 

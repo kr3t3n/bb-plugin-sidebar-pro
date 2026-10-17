@@ -77,9 +77,17 @@ function resolveCloudOriginFromKv(): string | null {
   }
 }
 
-/** Read Connect's public URL (CLI first, then local KV fallback). */
-export async function resolveCloudOrigin(): Promise<string | null> {
+/**
+ * Remote origin for thread links. The operator-configured app URL
+ * (`BB_APP_URL`, such as a Tailscale Serve address) wins; otherwise read
+ * Connect's public URL (CLI first, then local KV fallback).
+ */
+export async function resolveCloudOrigin(
+  appUrl?: string | null,
+): Promise<string | null> {
   return (
-    (await resolveCloudOriginViaCli()) ?? resolveCloudOriginFromKv()
+    normalizeOrigin(appUrl) ??
+    (await resolveCloudOriginViaCli()) ??
+    resolveCloudOriginFromKv()
   );
 }

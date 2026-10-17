@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import { resolveCloudOrigin } from "./resolve-cloud-origin";
 
 describe("resolveCloudOrigin", () => {
-  it("reads the paired Connect serverUrl from local KV when CLI works or falls back", async () => {
-    const origin = await resolveCloudOrigin();
-    // This machine is paired as gap — either CLI or KV should yield the URL.
-    expect(origin).toBe("https://gap.getbb.app");
+  it("prefers the configured app URL and trims a trailing slash", async () => {
+    await expect(
+      resolveCloudOrigin("https://bb-agents.example.ts.net/"),
+    ).resolves.toBe("https://bb-agents.example.ts.net");
+  });
+
+  it("ignores a blank app URL and falls back to Connect or null", async () => {
+    const origin = await resolveCloudOrigin("  ");
+    expect(origin === null || /^https:\/\//.test(origin)).toBe(true);
   });
 });

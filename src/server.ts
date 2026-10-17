@@ -133,7 +133,7 @@ export const t3sidebarRpcContract = defineRpcContract({
     }),
   },
   /**
-   * Origins for "Copy local/cloud link". Local is always this server's
+   * Origins for "Copy local/remote link". Local is always this server's
    * loopback SPA; cloud is the Connect front door when paired.
    */
   linkOrigins: {
@@ -321,7 +321,7 @@ export default function plugin(bb: BbPluginApi) {
     async linkOrigins() {
       return {
         localOrigin: bb.server.loopbackBaseUrl.replace(/\/$/, ""),
-        cloudOrigin: await resolveCloudOrigin(),
+        cloudOrigin: await resolveCloudOrigin(bb.server.experimental_appUrl),
       };
     },
     async listArchived({ projectId, offset = 0 }) {
